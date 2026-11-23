@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" class="dark" data-theme="sapphire">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>PB X Store Control Center</title>
+    <meta
+      name="description"
+      content="3D tactile admin control center for managing PB X Store applications, builds, QR distribution, and analytics."
+    />
+    <meta id="meta-theme-color" name="theme-color" content="#081020" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta property="og:title" content="PB X Store Control Center" />
+    <meta
+      property="og:description"
+      content="3D tactile admin control center for managing PB X Store applications, builds, QR distribution, and analytics."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      (function () {
+        try {
+          var mode = localStorage.getItem('pbx_color_mode') || 'dark';
+          var theme = localStorage.getItem('pbx_accent_theme') || 'sapphire';
+          var valid = {
+            sapphire: 1,
+            mint: 1,
+            sakura: 1,
+            orchid: 1,
+            gold: 1,
+            coral: 1,
+            arctic: 1,
+            matcha: 1,
+            ruby: 1,
+            mocha: 1,
+            lavender: 1,
+            titanium: 1,
+          };
+          if (!valid[theme]) theme = 'sapphire';
+          var root = document.documentElement;
+          if (mode === 'dark') {
+            root.classList.add('dark');
+          } else {
+            root.classList.remove('dark');
+          }
+          root.setAttribute('data-theme', theme);
+          var colors = {
+            dark: {
+              sapphire: '#081020',
+              mint: '#071713',
+              sakura: '#1a0b15',
+              orchid: '#120b20',
+              gold: '#171207',
+              coral: '#1b0d0a',
+              arctic: '#07141b',
+              matcha: '#0e1609',
+              ruby: '#1a080e',
+              mocha: '#160f0b',
+              lavender: '#0d0e20',
+              titanium: '#0b0c0f',
+            },
+            light: {
+              sapphire: '#e8f0fe',
+              mint: '#e5f7f1',
+              sakura: '#fce9f3',
+              orchid: '#f0e9fe',
+              gold: '#faf2dc',
+              coral: '#fdece6',
+              arctic: '#e4f5fb',
+              matcha: '#eef5e4',
+              ruby: '#fbe8ed',
+              mocha: '#f4ece6',
+              lavender: '#ebecfe',
+              titanium: '#eceef2',
+            },
+          };
+          var bg = (colors[mode] && colors[mode][theme]) || '#081020';
+          var meta = document.getElementById('meta-theme-color');
+          if (meta) meta.setAttribute('content', bg);
+          root.style.backgroundColor = bg;
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="antialiased selection:bg-[var(--accent-soft)] selection:text-[var(--accent)]">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
