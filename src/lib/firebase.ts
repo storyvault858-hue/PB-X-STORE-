@@ -48,20 +48,21 @@ export function getServerDateString(nowMs: number = Date.now(), offsetDays = 0):
 }
 
 /**
- * Strictly parses YYYY-MM-DD to the end of that calendar day (23:59:59.999).
- * Returns null for Lifetime apps or blank/invalid strings.
+ * Computes exact expiry epoch timestamp (ms) from YYYY-MM-DD and optional HH:MM.
+ * - If time is omitted or '23:59', expires at 23:59:59.999 of that date (end of full day).
+ * - If a specific HH:MM is set (e.g. '15:30'), expires at the exact second 15:30:00.000.
+ * Returns null if date is blank or invalid.
  */
-export function parseExpiryEndTimestamp(
+export function buildExpiryTimestamp(
   expiryDate?: string | null,
-  isLifetime?: boolean
+  expiryTime?: string | null
 ): number | null {
-  if (isLifetime === true) return null;
   if (!expiryDate || typeof expiryDate !== 'string' || expiryDate.trim() === '') {
     return null;
   }
 
-  const trimmed = expiryDate.trim();
-  const ymdMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  const trimmedDate = expiryDate.trim();
+  const ymdMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmedDate);
   if (!ymdMatch) {
     return null;
   }
@@ -73,34 +74,96 @@ export function parseExpiryEndTimestamp(
     return null;
   }
 
-  const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
-  return Number.isNaN(endOfDay.getTime()) ? null : endOfDay.getTime();
+  const trimmedTime = typeof expiryTime === 'string' ? expiryTime.trim() : '';
+  const hmMatch = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmedTime);
+
+  let targetDate: Date;
+  if (hmMatch) {
+    const hours = Number(hmMatch[1]);
+    const minutes = Number(hmMatch[2]);
+    const hasSeconds = hmMatch[3] !== undefined;
+    const seconds = hasSeconds ? Number(hmMatch[3]) : hours === 23 && minutes === 59 ? 59 : 0;
+    const millis = hours === 23 && minutes === 59 && !hasSeconds ? 999 : 0;
+    if (hours > 23 || minutes > 59 || seconds > 59) {
+      return null;
+    }
+    targetDate = new Date(year, month - 1, day, hours, minutes, seconds, millis);
+  } else {
+    targetDate = new Date(year, month - 1, day, 23, 59, 59, 999);
+  }
+
+  // Ensure calendar date didn't overflow (e.g. Feb 30)
+  if (
+    Number.isNaN(targetDate.getTime()) ||
+    targetDate.getFullYear() !== year ||
+    targetDate.getMonth() !== month - 1 ||
+    targetDate.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return targetDate.getTime();
 }
 
 /**
- * Returns true ONLY if the app is NOT Lifetime AND its strict YYYY-MM-DD expiry date
- * has completely passed according to real Firebase server time.
+ * Strictly resolves the exact expiry timestamp (ms) for an app.
+ * - Lifetime apps ALWAYS return null (can NEVER expire or be deleted).
+ * - Uses saved exact expiryTimestamp (ms) when present; falls back to expiryDate + expiryTime.
+ */
+export function parseExpiryEndTimestamp(
+  expiryDate?: string | null,
+  isLifetime?: boolean,
+  expiryTimestamp?: number | null,
+  expiryTime?: string | null
+): number | null {
+  if (isLifetime === true) return null;
+
+  if (
+    typeof expiryTimestamp === 'number' &&
+    Number.isFinite(expiryTimestamp) &&
+    expiryTimestamp > 0
+  ) {
+    return expiryTimestamp;
+  }
+
+  return buildExpiryTimestamp(expiryDate, expiryTime);
+}
+
+/**
+ * Returns true ONLY if:
+ * 1. The app is NOT Lifetime (`isLifetime !== true`), AND
+ * 2. It has a valid expiry timestamp (`endTs !== null`), AND
+ * 3. True Firebase server time has reached or passed the exact expiry instant (`serverNowMs >= endTs`).
+ * If even 1 second remains (`endTs - serverNowMs > 0`), this strictly returns false.
  */
 export function isAppExpired(
-  app: Pick<StoreApp, 'expiryDate' | 'isLifetime'>,
+  app: Pick<StoreApp, 'expiryDate' | 'isLifetime' | 'expiryTimestamp' | 'expiryTime'>,
   serverNowMs: number
 ): boolean {
-  const endTs = parseExpiryEndTimestamp(app.expiryDate, app.isLifetime);
+  if (app.isLifetime === true) return false;
+  const endTs = parseExpiryEndTimestamp(
+    app.expiryDate,
+    app.isLifetime,
+    app.expiryTimestamp,
+    app.expiryTime
+  );
   if (endTs === null) return false;
-  return serverNowMs > endTs;
+  return serverNowMs >= endTs;
 }
 
 export function getExpiryStatus(
   expiryDate?: string | null,
   isLifetime?: boolean,
-  serverNowMs: number = Date.now()
+  serverNowMs: number = Date.now(),
+  expiryTimestamp?: number | null,
+  expiryTime?: string | null
 ): {
   label: string;
   subLabel: string;
   isLifetime: boolean;
   tone: 'nominal' | 'warning' | 'expired';
 } {
-  const endTs = parseExpiryEndTimestamp(expiryDate, isLifetime);
+  const endTs = parseExpiryEndTimestamp(expiryDate, isLifetime, expiryTimestamp, expiryTime);
   if (endTs === null) {
     return {
       label: 'Lifetime Access',
@@ -111,44 +174,60 @@ export function getExpiryStatus(
   }
 
   const diffMs = endTs - serverNowMs;
-  const formattedTarget = new Date(endTs).toLocaleDateString(undefined, {
+  const targetDateObj = new Date(endTs);
+  const formattedTarget = targetDateObj.toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 
   if (diffMs <= 0) {
     return {
       label: 'Expired',
-      subLabel: `Expired on ${formattedTarget}`,
+      subLabel: `Expired at ${formattedTarget}`,
       isLifetime: false,
       tone: 'expired',
     };
   }
 
-  const hoursLeft = Math.ceil(diffMs / (1000 * 60 * 60));
-  if (hoursLeft <= 24) {
+  const totalSeconds = Math.ceil(diffMs / 1000);
+  if (totalSeconds < 86400) {
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const countdown =
+      hrs > 0
+        ? `${pad(hrs)}h ${pad(mins)}m ${pad(secs)}s`
+        : mins > 0
+          ? `${pad(mins)}m ${pad(secs)}s`
+          : `${pad(secs)}s`;
+
     return {
-      label: 'Expires today',
-      subLabel: `Auto-removes after ${formattedTarget}`,
+      label: `Expires in ${countdown}`,
+      subLabel: `Auto-removes at ${formattedTarget}`,
       isLifetime: false,
       tone: 'warning',
     };
   }
 
-  const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  if (daysLeft <= 7) {
+  const days = Math.floor(totalSeconds / 86400);
+  const remHours = Math.floor((totalSeconds % 86400) / 3600);
+
+  if (days < 7) {
     return {
-      label: `Expires in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`,
-      subLabel: `Auto-removes after ${formattedTarget}`,
+      label: remHours > 0 ? `Expires in ${days}d ${remHours}h` : `Expires in ${days} ${days === 1 ? 'day' : 'days'}`,
+      subLabel: `Auto-removes at ${formattedTarget}`,
       isLifetime: false,
       tone: 'warning',
     };
   }
 
   return {
-    label: `Expires in ${daysLeft} days`,
-    subLabel: `Auto-removes after ${formattedTarget}`,
+    label: `Expires in ${days} days`,
+    subLabel: `Auto-removes at ${formattedTarget}`,
     isLifetime: false,
     tone: 'nominal',
   };

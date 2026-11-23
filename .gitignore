@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+android/
+PB-X-Store-Control-Center.apk
+

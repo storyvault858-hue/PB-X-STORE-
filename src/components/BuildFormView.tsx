@@ -20,6 +20,7 @@ const EMPTY_FORM: AppFormValues = {
   bundleId: '',
   expiryMode: 'lifetime',
   expiryDate: '',
+  expiryTime: '23:59',
   iconUrl: '',
   shortDescription: '',
   category: '',
@@ -60,6 +61,7 @@ export function BuildFormView({
         bundleId: editingApp.bundleId || '',
         expiryMode: hasExpiry ? 'date' : 'lifetime',
         expiryDate: hasExpiry ? String(editingApp.expiryDate) : '',
+        expiryTime: hasExpiry && editingApp.expiryTime ? String(editingApp.expiryTime) : '23:59',
         iconUrl: editingApp.iconUrl || '',
         shortDescription: editingApp.shortDescription || '',
         category: editingApp.category || '',
@@ -88,6 +90,7 @@ export function BuildFormView({
       ...prev,
       expiryMode: mode,
       expiryDate: mode === 'lifetime' ? '' : prev.expiryDate || getServerDateString(serverNow, 30),
+      expiryTime: mode === 'lifetime' ? '23:59' : prev.expiryTime || '23:59',
     }));
   };
 
@@ -321,17 +324,40 @@ export function BuildFormView({
                 </p>
               ) : (
                 <div className="space-y-3 pt-1">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
-                    <input
-                      id="f-expiry"
-                      type="date"
-                      min={todayStr}
-                      required={form.expiryMode === 'date'}
-                      value={form.expiryDate}
-                      onChange={(e) => updateField('expiryDate', e.target.value)}
-                      className="input-3d font-mono min-h-[44px] sm:flex-1"
-                    />
-                    <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                    <div className="sm:col-span-5">
+                      <label
+                        htmlFor="f-expiry"
+                        className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1"
+                      >
+                        Expiry Date
+                      </label>
+                      <input
+                        id="f-expiry"
+                        type="date"
+                        min={todayStr}
+                        required={form.expiryMode === 'date'}
+                        value={form.expiryDate}
+                        onChange={(e) => updateField('expiryDate', e.target.value)}
+                        className="input-3d font-mono min-h-[44px]"
+                      />
+                    </div>
+                    <div className="sm:col-span-3">
+                      <label
+                        htmlFor="f-expiry-time"
+                        className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1"
+                      >
+                        Exact Time
+                      </label>
+                      <input
+                        id="f-expiry-time"
+                        type="time"
+                        value={form.expiryTime}
+                        onChange={(e) => updateField('expiryTime', e.target.value)}
+                        className="input-3d font-mono min-h-[44px]"
+                      />
+                    </div>
+                    <div className="sm:col-span-4 flex items-center gap-1.5">
                       {[
                         { label: '+7d', days: 7 },
                         { label: '+30d', days: 30 },
@@ -343,7 +369,7 @@ export function BuildFormView({
                           onClick={() =>
                             updateField('expiryDate', getServerDateString(serverNow, preset.days))
                           }
-                          className="btn-3d-secondary min-h-[40px] px-3 rounded-xl text-xs font-mono font-semibold cursor-pointer whitespace-nowrap"
+                          className="btn-3d-secondary flex-1 min-h-[44px] px-2.5 rounded-xl text-xs font-mono font-semibold cursor-pointer whitespace-nowrap"
                         >
                           {preset.label}
                         </button>
@@ -351,7 +377,7 @@ export function BuildFormView({
                     </div>
                   </div>
                   <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-                    Auto-Expiry Active: Once this date completes, the app will be automatically removed from both this Control Center and PB X Store.
+                    Server-Time Verified Auto-Expiry: Never removes early — stays live down to the last second, then auto-deletes from PB X Store right when the timer reaches 00s.
                   </p>
                 </div>
               )}

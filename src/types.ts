@@ -40,6 +40,8 @@ export interface StoreApp {
   published: boolean;
   isLifetime?: boolean;
   expiryDate?: string | null;
+  expiryTime?: string | null;
+  expiryTimestamp?: number | null;
   createdAt?: string;
   updatedAt?: string;
   downloads?: number;
@@ -55,6 +57,7 @@ export interface AppFormValues {
   bundleId: string;
   expiryMode: ExpiryMode;
   expiryDate: string;
+  expiryTime: string;
   iconUrl: string;
   shortDescription: string;
   category: string;

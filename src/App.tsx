@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import {
   auth,
+  buildExpiryTimestamp,
   copyToClipboard,
   db,
   isAppExpired,
@@ -66,7 +67,8 @@ export default function App() {
 
   // True real-world Firebase Server Time (immune to incorrect device clocks)
   const [serverTimeOffset, setServerTimeOffset] = useState(0);
-  const [serverTimeReady, setServerTimeReady] = useState(false);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
+  const [serverTimeVerified, setServerTimeVerified] = useState(false);
   const [clockTick, setClockTick] = useState(() => Date.now());
 
   const [apps, setApps] = useState<StoreApp[]>([]);
@@ -109,25 +111,74 @@ export default function App() {
     mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  // 0. Sync true Firebase Server Time offset so device clock drift never causes false expiry
+  // 0. Sync true Firebase Server Time strictly AFTER `.info/connected` is true + settle delay.
+  // Prevents Firebase's initial local `0` offset emission from ever running against an inaccurate device clock.
   useEffect(() => {
-    const offsetRef = ref(db, '.info/serverTimeOffset');
-    const unsubOffset = onValue(offsetRef, (snap) => {
-      const offset = Number(snap.val() || 0);
-      setServerTimeOffset(Number.isFinite(offset) ? offset : 0);
-      setServerTimeReady(true);
-      setClockTick(Date.now());
+    let settleTimer: number | null = null;
+    let connectedNow = false;
+    let receivedOffset = false;
+
+    const scheduleVerification = () => {
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer);
+        settleTimer = null;
+      }
+      if (!connectedNow || !receivedOffset) {
+        setServerTimeVerified(false);
+        return;
+      }
+      // Wait 1.5s after connection & offset receipt so the real RTDB WebSocket offset has fully settled
+      settleTimer = window.setTimeout(() => {
+        if (connectedNow && receivedOffset) {
+          setServerTimeVerified(true);
+          setClockTick(Date.now());
+        }
+      }, 1500);
+    };
+
+    const unsubConnected = onValue(ref(db, '.info/connected'), (snap) => {
+      connectedNow = snap.val() === true;
+      setIsFirebaseConnected(connectedNow);
+      scheduleVerification();
     });
 
-    const interval = window.setInterval(() => {
+    const unsubOffset = onValue(ref(db, '.info/serverTimeOffset'), (snap) => {
+      const offset = Number(snap.val() || 0);
+      setServerTimeOffset(Number.isFinite(offset) ? offset : 0);
+      receivedOffset = true;
       setClockTick(Date.now());
-    }, 30000);
+      scheduleVerification();
+    });
 
     return () => {
+      if (settleTimer !== null) window.clearTimeout(settleTimer);
+      unsubConnected();
       unsubOffset();
-      window.clearInterval(interval);
     };
   }, []);
+
+  // Smart precision ticker: runs every 1 second whenever any build has an expiry date/time
+  // so live countdowns update second-by-second and deletion triggers at the exact 00s expiry mark.
+  const hasTimedApps = useMemo(
+    () =>
+      apps.some(
+        (item) =>
+          item.isLifetime !== true &&
+          Boolean(
+            (typeof item.expiryTimestamp === 'number' && item.expiryTimestamp > 0) ||
+              (item.expiryDate && String(item.expiryDate).trim().length > 0)
+          )
+      ),
+    [apps]
+  );
+
+  useEffect(() => {
+    const intervalMs = hasTimedApps ? 1000 : 30000;
+    const interval = window.setInterval(() => {
+      setClockTick(Date.now());
+    }, intervalMs);
+    return () => window.clearInterval(interval);
+  }, [hasTimedApps]);
 
   // 1. Firebase Authentication + Admin UID Verification
   useEffect(() => {
@@ -230,17 +281,27 @@ export default function App() {
     };
   }, [user, isAdmin, syncKey, showToast]);
 
-  // 3. Server-Time Verified Auto-Expiry Removal:
-  // ONLY runs after Firebase `.info/serverTimeOffset` is synced so wrong device clocks
-  // can NEVER remove unexpired builds. Lifetime apps (expiryDate: null or isLifetime: true)
-  // are NEVER touched.
+  // 3. Ironclad Server-Time-Verified Auto-Expiry Removal:
+  // - NEVER runs until Firebase `.info/connected === true` AND `.info/serverTimeOffset` has settled.
+  // - NEVER touches Lifetime apps (`isLifetime: true` or no expiry).
+  // - NEVER deletes any app even 1 second early (`remainingMs > 0` => strictly untouched).
+  // - The exact second `trueNow >= endTs`, immediately deletes the expired app from Firebase RTDB.
   useEffect(() => {
-    if (!user || !isAdmin || !serverTimeReady || apps.length === 0) return;
+    if (
+      !user ||
+      !isAdmin ||
+      !isFirebaseConnected ||
+      !serverTimeVerified ||
+      apps.length === 0
+    ) {
+      return;
+    }
 
     const trueNow = Date.now() + serverTimeOffset;
     const expiredApps = apps.filter(
       (item) =>
         item.id &&
+        item.isLifetime !== true &&
         isAppExpired(item, trueNow) &&
         !autoDeletingIdsRef.current.has(item.id)
     );
@@ -252,14 +313,23 @@ export default function App() {
       try {
         await remove(ref(db, `apps/${expired.id}`));
         showToast(
-          `Expired build "${expired.name}" was automatically removed from PB X Store.`,
+          `Expired build "${expired.name}" completed its timer and was automatically removed.`,
           'info'
         );
       } catch {
         autoDeletingIdsRef.current.delete(expired.id);
       }
     });
-  }, [apps, user, isAdmin, serverTimeReady, serverTimeOffset, clockTick, showToast]);
+  }, [
+    apps,
+    user,
+    isAdmin,
+    isFirebaseConnected,
+    serverTimeVerified,
+    serverTimeOffset,
+    clockTick,
+    showToast,
+  ]);
 
   // Keep managedApp reactive so real-time RTDB changes appear immediately
   const managedApp = useMemo(
@@ -366,15 +436,22 @@ export default function App() {
 
     const isLifetime = values.expiryMode === 'lifetime';
     const trimmedExpiry = values.expiryDate.trim();
+    const trimmedTime = (values.expiryTime || '23:59').trim() || '23:59';
     const trueNow = Date.now() + serverTimeOffset;
+    let computedExpiryTimestamp: number | null = null;
 
     if (!isLifetime) {
       if (!trimmedExpiry) {
         showToast('Please select an expiry date or switch to Lifetime.', 'error');
         return;
       }
-      if (isAppExpired({ expiryDate: trimmedExpiry, isLifetime: false }, trueNow)) {
-        showToast('Expiry date cannot be in the past. Pick today or a future date.', 'error');
+      computedExpiryTimestamp = buildExpiryTimestamp(trimmedExpiry, trimmedTime);
+      if (computedExpiryTimestamp === null) {
+        showToast('Please enter a valid expiry date and time.', 'error');
+        return;
+      }
+      if (computedExpiryTimestamp <= trueNow) {
+        showToast('Expiry date & time must be in the future.', 'error');
         return;
       }
     }
@@ -409,6 +486,8 @@ export default function App() {
       published: Boolean(values.published),
       isLifetime,
       expiryDate: isLifetime ? null : trimmedExpiry,
+      expiryTime: isLifetime ? null : trimmedTime,
+      expiryTimestamp: isLifetime ? null : computedExpiryTimestamp,
       updatedAt: new Date(trueNow).toISOString(),
     };
 
@@ -471,6 +550,8 @@ export default function App() {
       await update(ref(db, `apps/${app.id}`), {
         isLifetime: true,
         expiryDate: null,
+        expiryTime: null,
+        expiryTimestamp: null,
         updatedAt: new Date(trueNow).toISOString(),
       });
       showToast(`${app.name} is now set to Lifetime (Never Expires).`, 'success');

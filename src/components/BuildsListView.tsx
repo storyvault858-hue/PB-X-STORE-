@@ -200,7 +200,13 @@ export function BuildsListView({
       ) : (
         <div className="space-y-3">
           {filteredApps.map((app) => {
-            const expiry = getExpiryStatus(app.expiryDate, app.isLifetime, serverNow);
+            const expiry = getExpiryStatus(
+              app.expiryDate,
+              app.isLifetime,
+              serverNow,
+              app.expiryTimestamp,
+              app.expiryTime
+            );
             const url = getAppStoreUrl(app);
 
             return (

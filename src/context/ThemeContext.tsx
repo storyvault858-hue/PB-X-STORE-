@@ -1,4 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import type { ColorMode, ThemeId } from '../types';
 import { playTactileSound, unlockAudioEngine, type SoundEffect } from '../lib/sound';
 
@@ -179,6 +181,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       document.head.appendChild(meta);
     }
     meta.setAttribute('content', canvasColor);
+
+    if (Capacitor.isNativePlatform()) {
+      void (async () => {
+        try {
+          await StatusBar.setOverlaysWebView({ overlay: false });
+          await StatusBar.setBackgroundColor({ color: canvasColor });
+          await StatusBar.setStyle({
+            style: mode === 'dark' ? Style.Dark : Style.Light,
+          });
+        } catch {
+          // Ignore on platforms where StatusBar API is restricted
+        }
+      })();
+    }
 
     try {
       localStorage.setItem('pbx_color_mode', mode);

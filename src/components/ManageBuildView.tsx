@@ -45,7 +45,13 @@ export function ManageBuildView({
   onDelete,
 }: ManageBuildViewProps) {
   const shareUrl = getAppStoreUrl(app);
-  const expiry = getExpiryStatus(app.expiryDate, app.isLifetime, serverNow);
+  const expiry = getExpiryStatus(
+    app.expiryDate,
+    app.isLifetime,
+    serverNow,
+    app.expiryTimestamp,
+    app.expiryTime
+  );
 
   const expiryToneClass =
     expiry.tone === 'expired'
@@ -63,7 +69,11 @@ export function ManageBuildView({
     { label: 'Category', value: app.category || 'Uncategorized', mono: false },
     {
       label: 'Validity',
-      value: expiry.isLifetime ? 'Lifetime (Never Expires)' : app.expiryDate || 'Timed',
+      value: expiry.isLifetime
+        ? 'Lifetime (Never Expires)'
+        : app.expiryDate
+          ? `${app.expiryDate}${app.expiryTime ? ` · ${app.expiryTime}` : ''}`
+          : 'Timed',
       mono: !expiry.isLifetime,
     },
     { label: 'Created', value: formatShortDate(app.createdAt), mono: true },
