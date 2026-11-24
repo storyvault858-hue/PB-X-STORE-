@@ -763,10 +763,10 @@ export default function App() {
 
           {/* Mobile Top Header — seamlessly matches status bar & active theme */}
           <header
-            className="lg:hidden sticky top-0 z-40 min-h-[56px] pt-[env(safe-area-inset-top)] px-3.5 py-2 flex items-center justify-between gap-2 border-b border-[var(--border-subtle)] transition-colors duration-200"
+            className="lg:hidden sticky top-0 z-40 min-h-[50px] pt-[max(0.45rem,env(safe-area-inset-top))] px-3 py-1.5 flex items-center justify-between gap-2 border-b border-[var(--border-subtle)] transition-colors duration-200"
             style={{ backgroundColor: 'var(--canvas)' }}
           >
-            <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
               <BrandEmblem3D size="sm" />
               <span className="font-bold text-sm text-[var(--text-primary)] truncate">
                 {mobilePageTitle}
@@ -779,9 +779,9 @@ export default function App() {
                 type="button"
                 onClick={requestLogout}
                 aria-label="Sign out"
-                className="btn-3d-secondary min-h-[40px] min-w-[40px] px-2.5 rounded-xl flex items-center justify-center text-red-500 cursor-pointer"
+                className="btn-3d-secondary min-h-[34px] min-w-[34px] sm:min-h-[38px] sm:min-w-[38px] px-2 rounded-xl flex items-center justify-center text-red-500 cursor-pointer"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </div>
           </header>
@@ -789,7 +789,7 @@ export default function App() {
           {/* Main Content Viewport */}
           <main
             ref={mainRef}
-            className="flex-1 min-w-0 px-4 sm:px-6 lg:px-10 py-6 lg:py-8 pb-24 lg:pb-10 lg:h-screen lg:overflow-y-auto"
+            className="flex-1 min-w-0 px-3.5 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8 pb-20 lg:pb-10 lg:h-screen lg:overflow-y-auto"
           >
             <div className="max-w-5xl mx-auto">
               {syncError && (
@@ -869,7 +869,7 @@ export default function App() {
           {/* Mobile Bottom Navigation — exact 3 clean tabs matching active theme */}
           <nav
             aria-label="Mobile navigation"
-            className="lg:hidden fixed bottom-0 inset-x-0 z-40 min-h-[64px] pb-[env(safe-area-inset-bottom)] px-2 border-t border-[var(--border-subtle)] flex items-center justify-around transition-colors duration-200"
+            className="lg:hidden fixed bottom-0 inset-x-0 z-40 min-h-[56px] pb-[env(safe-area-inset-bottom)] px-2 border-t border-[var(--border-subtle)] flex items-center justify-around transition-colors duration-200"
             style={{ backgroundColor: 'var(--canvas)' }}
           >
             {navItems.map((item) => {
@@ -883,13 +883,13 @@ export default function App() {
                   key={item.id}
                   type="button"
                   onClick={item.action}
-                  className={`flex-1 min-h-[48px] flex flex-col items-center justify-center gap-1 rounded-xl transition-colors cursor-pointer ${
+                  className={`flex-1 min-h-[44px] flex flex-col items-center justify-center gap-0.5 rounded-xl transition-colors cursor-pointer ${
                     isActive
                       ? 'text-[var(--accent)] font-bold'
                       : 'text-[var(--text-muted)] font-medium'
                   }`}
                 >
-                  <Icon className="w-5 h-5" />
+                  <Icon className="w-[18px] h-[18px]" />
                   <span className="text-[11px] leading-none whitespace-nowrap">
                     {item.id === 'add' ? 'Upload' : item.label}
                   </span>

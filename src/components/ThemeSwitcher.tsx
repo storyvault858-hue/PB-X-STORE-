@@ -130,7 +130,7 @@ export function ThemeSwitcher({ compact = false, align = 'right' }: ThemeSwitche
   }
 
   return (
-    <div ref={containerRef} className="relative flex items-center gap-1.5 sm:gap-2">
+    <div ref={containerRef} className="relative flex items-center gap-1.5">
       {/* Touch Sound Toggle */}
       <button
         type="button"
@@ -139,12 +139,12 @@ export function ThemeSwitcher({ compact = false, align = 'right' }: ThemeSwitche
         aria-label={soundEnabled ? 'Mute touch sounds' : 'Enable touch sounds'}
         aria-pressed={soundEnabled}
         title={soundEnabled ? 'Touch Sound: On' : 'Touch Sound: Off'}
-        className="btn-3d-secondary min-h-[40px] min-w-[40px] px-2.5 rounded-xl flex items-center justify-center cursor-pointer"
+        className="btn-3d-secondary min-h-[34px] min-w-[34px] sm:min-h-[38px] sm:min-w-[38px] px-2 rounded-xl flex items-center justify-center cursor-pointer"
       >
         {soundEnabled ? (
-          <Volume2 className="w-4 h-4 text-[var(--accent)]" />
+          <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--accent)]" />
         ) : (
-          <VolumeX className="w-4 h-4 text-[var(--text-muted)]" />
+          <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[var(--text-muted)]" />
         )}
       </button>
 
@@ -154,12 +154,12 @@ export function ThemeSwitcher({ compact = false, align = 'right' }: ThemeSwitche
         data-no-tap-sound="true"
         onClick={toggleMode}
         aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        className="btn-3d-secondary min-h-[40px] min-w-[40px] px-2.5 rounded-xl flex items-center justify-center cursor-pointer"
+        className="btn-3d-secondary min-h-[34px] min-w-[34px] sm:min-h-[38px] sm:min-w-[38px] px-2 rounded-xl flex items-center justify-center cursor-pointer"
       >
         {mode === 'dark' ? (
-          <Sun className="w-4 h-4 text-amber-400" />
+          <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
         ) : (
-          <Moon className="w-4 h-4 text-slate-700" />
+          <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-700" />
         )}
       </button>
 
@@ -169,10 +169,10 @@ export function ThemeSwitcher({ compact = false, align = 'right' }: ThemeSwitche
         onClick={() => setOpen((prev) => !prev)}
         aria-label="Choose color theme"
         aria-expanded={open}
-        className="btn-3d-secondary min-h-[40px] px-3 rounded-xl flex items-center gap-2 text-xs font-semibold cursor-pointer whitespace-nowrap"
+        className="btn-3d-secondary min-h-[34px] sm:min-h-[38px] px-2.5 rounded-xl flex items-center gap-1.5 text-xs font-semibold cursor-pointer whitespace-nowrap"
       >
         <span
-          className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/30"
+          className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full shrink-0 border border-white/30"
           style={{
             background: `linear-gradient(135deg, ${currentTheme.swatchEnd} 0%, ${currentTheme.swatch} 100%)`,
           }}

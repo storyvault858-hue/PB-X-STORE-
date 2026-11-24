@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="pbBg" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#48484f" />
+      <stop offset="18%" stop-color="#2c2c31" />
+      <stop offset="68%" stop-color="#17171a" />
+      <stop offset="100%" stop-color="#0b0b0e" />
+    </linearGradient>
+    <linearGradient id="pbSheen" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.34" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="pbRim" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.45" />
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.06" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.6" />
+    </linearGradient>
+  </defs>
+  <rect x="20" y="20" width="472" height="472" rx="116" fill="url(#pbBg)" />
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="none" stroke="url(#pbRim)" stroke-width="8" />
+  <path d="M136 32 H376 C434 32 480 78 480 136 V220 C395 258 117 258 32 220 V136 C32 78 78 32 136 32 Z" fill="url(#pbSheen)" />
+  <text x="256" y="316" text-anchor="middle" font-family="Plus Jakarta Sans, Inter, Arial, sans-serif" font-weight="800" font-size="184" letter-spacing="-8" fill="#ffffff">PB</text>
+</svg>

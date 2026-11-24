@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 
 const rootDir = process.cwd();
 const androidDir = path.join(rootDir, 'android');
@@ -13,6 +14,170 @@ if (!fs.existsSync(androidDir)) {
 
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
+}
+
+// ---------------------------------------------------------------------------
+// Minimal Zero-Dependency PNG Encoder for Legacy Android Mipmap Launcher Icons
+// Renders the exact Glossy Black Metallic 3D "PB" Logo so EVERY Android launcher
+// and APK installer preview shows the black PB logo (never Capacitor default).
+// ---------------------------------------------------------------------------
+const CRC_TABLE = new Uint32Array(256);
+for (let n = 0; n < 256; n++) {
+  let c = n;
+  for (let k = 0; k < 8; k++) {
+    c = (c & 1) !== 0 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  }
+  CRC_TABLE[n] = c >>> 0;
+}
+
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const typeBuf = Buffer.from(type, 'ascii');
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(data.length, 0);
+  const crcInput = Buffer.concat([typeBuf, data]);
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(crc32(crcInput), 0);
+  return Buffer.concat([lenBuf, typeBuf, data, crcBuf]);
+}
+
+function encodeRgbaPng(width, height, rgba) {
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * (width * 4 + 1);
+    raw[rowStart] = 0; // filter type: None
+    rgba.copy(raw, rowStart + 1, y * width * 4, (y + 1) * width * 4);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // RGBA
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+  const compressed = zlib.deflateSync(raw, { level: 9 });
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  return Buffer.concat([
+    sig,
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', compressed),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+// Signed distance to a bold geometric "P" and "B" in normalized [0..1] icon coordinates
+function sdRoundedBox(px, py, cx, cy, hw, hh, r) {
+  const dx = Math.abs(px - cx) - hw + r;
+  const dy = Math.abs(py - cy) - hh + r;
+  return Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) + Math.min(Math.max(dx, dy), 0) - r;
+}
+
+function isInsidePB(u, v) {
+  // Bold geometric "P" centered left (x: 0.255..0.485, y: 0.345..0.655)
+  const pStem = u >= 0.265 && u <= 0.332 && v >= 0.35 && v <= 0.65;
+  const pOuter = sdRoundedBox(u, v, 0.378, 0.435, 0.108, 0.085, 0.072) <= 0 && u >= 0.265;
+  const pHole = sdRoundedBox(u, v, 0.376, 0.435, 0.052, 0.036, 0.028) <= 0 && u >= 0.332;
+  const inP = pStem || (pOuter && !pHole);
+
+  // Bold geometric "B" centered right (x: 0.525..0.745, y: 0.345..0.655)
+  const bStem = u >= 0.525 && u <= 0.592 && v >= 0.35 && v <= 0.65;
+  const bTopOuter = sdRoundedBox(u, v, 0.630, 0.428, 0.105, 0.078, 0.064) <= 0 && u >= 0.525;
+  const bTopHole = sdRoundedBox(u, v, 0.625, 0.428, 0.048, 0.030, 0.022) <= 0 && u >= 0.592;
+  const bBotOuter = sdRoundedBox(u, v, 0.636, 0.568, 0.112, 0.082, 0.068) <= 0 && u >= 0.525;
+  const bBotHole = sdRoundedBox(u, v, 0.630, 0.568, 0.053, 0.033, 0.025) <= 0 && u >= 0.592;
+  const inB = bStem || (bTopOuter && !bTopHole) || (bBotOuter && !bBotHole);
+
+  return inP || inB;
+}
+
+function renderBlackPBIconPng(size, shape = 'squircle') {
+  const rgba = Buffer.alloc(size * size * 4);
+  const sub = 3; // 3x3 supersampling for razor-sharp antialiased edges
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let rSum = 0;
+      let gSum = 0;
+      let bSum = 0;
+      let aSum = 0;
+
+      for (let sy = 0; sy < sub; sy++) {
+        for (let sx = 0; sx < sub; sx++) {
+          const u = (x + (sx + 0.5) / sub) / size;
+          const v = (y + (sy + 0.5) / sub) / size;
+
+          let insideShape = true;
+          let distEdge = 1;
+
+          if (shape === 'round') {
+            const d = Math.hypot(u - 0.5, v - 0.5) - 0.47;
+            insideShape = d <= 0;
+            distEdge = -d;
+          } else if (shape === 'squircle') {
+            const d = sdRoundedBox(u, v, 0.5, 0.5, 0.46, 0.46, 0.145);
+            insideShape = d <= 0;
+            distEdge = -d;
+          }
+
+          if (!insideShape) continue;
+
+          // Deep glossy obsidian-charcoal metallic gradient matching user's black PB emblem
+          const t = Math.max(0, Math.min(1, v));
+          let base = 58 * (1 - t) * (1 - t) + 26 * (1 - t) + 12 * t;
+
+          // Subtle top glass sheen highlight (upper 45% dome)
+          if (v < 0.46) {
+            const sheen = Math.pow(1 - v / 0.46, 1.8) * 34;
+            base += sheen;
+          }
+
+          // Top bright specular rim & subtle dark bottom lip
+          if (distEdge < 0.032) {
+            const rimFactor = 1 - distEdge / 0.032;
+            if (v < 0.45) {
+              base += rimFactor * (1 - v / 0.45) * 48;
+            } else {
+              base -= rimFactor * 14;
+            }
+          }
+
+          let cr = Math.max(8, Math.min(255, base));
+          let cg = Math.max(8, Math.min(255, base));
+          let cb = Math.max(10, Math.min(255, base + 3));
+
+          if (isInsidePB(u, v)) {
+            cr = 255;
+            cg = 255;
+            cb = 255;
+          }
+
+          rSum += cr;
+          gSum += cg;
+          bSum += cb;
+          aSum += 255;
+        }
+      }
+
+      const samples = sub * sub;
+      const idx = (y * size + x) * 4;
+      if (aSum > 0) {
+        rgba[idx] = Math.round(rSum / (aSum / 255));
+        rgba[idx + 1] = Math.round(gSum / (aSum / 255));
+        rgba[idx + 2] = Math.round(bSum / (aSum / 255));
+        rgba[idx + 3] = Math.round(aSum / samples);
+      }
+    }
+  }
+
+  return encodeRgbaPng(size, size, rgba);
 }
 
 // 1. Configure AndroidManifest.xml (permissions + cleartext traffic)
@@ -58,23 +223,25 @@ if (fs.existsSync(buildGradlePath)) {
   console.log(`Updated build.gradle -> versionCode=${runNumber}, versionName=1.0.${runNumber}`);
 }
 
-// 3. Configure clean branded launch colors & styles (prevents white splash flash)
+// 3. Configure clean dark launch colors & styles + fix Android 15/16 status bar overlap
 const valuesDir = path.join(resDir, 'values');
+const valuesV35Dir = path.join(resDir, 'values-v35');
 ensureDir(valuesDir);
+ensureDir(valuesV35Dir);
 
 const colorsXml = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#2563EB</color>
-    <color name="colorPrimaryDark">#081020</color>
-    <color name="colorAccent">#0EA5E9</color>
-    <color name="pbx_canvas_dark">#081020</color>
+    <color name="colorPrimary">#18181B</color>
+    <color name="colorPrimaryDark">#0B0C0F</color>
+    <color name="colorAccent">#52525B</color>
+    <color name="pbx_canvas_dark">#0B0C0F</color>
 </resources>
 `;
 fs.writeFileSync(path.join(valuesDir, 'colors.xml'), colorsXml, 'utf8');
 
 const icLauncherBgColorXml = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#1D4ED8</color>
+    <color name="ic_launcher_background">#141417</color>
 </resources>
 `;
 fs.writeFileSync(path.join(valuesDir, 'ic_launcher_background.xml'), icLauncherBgColorXml, 'utf8');
@@ -88,7 +255,8 @@ if (fs.existsSync(stylesPath)) {
       `<style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/pbx_canvas_dark</item>
         <item name="android:statusBarColor">@color/pbx_canvas_dark</item>
-        <item name="android:navigationBarColor">@color/pbx_canvas_dark</item>`
+        <item name="android:navigationBarColor">@color/pbx_canvas_dark</item>
+        <item name="android:fitsSystemWindows">true</item>`
     );
   }
   styles = styles.replace(
@@ -96,10 +264,32 @@ if (fs.existsSync(stylesPath)) {
     '<item name="android:background">@color/pbx_canvas_dark</item>'
   );
   fs.writeFileSync(stylesPath, styles, 'utf8');
-  console.log('Updated styles.xml with dark launch background');
+  console.log('Updated styles.xml with dark launch background & system bar insets');
 }
 
-// 4. Write crisp branded "PB" adaptive Android launcher icon (API 26+ vector)
+// Opt out of Android 15+ forced edge-to-edge overlap so StatusBar color & top bar never collide
+const stylesV35Xml = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/pbx_canvas_dark</item>
+        <item name="android:statusBarColor">@color/pbx_canvas_dark</item>
+        <item name="android:navigationBarColor">@color/pbx_canvas_dark</item>
+        <item name="android:fitsSystemWindows">true</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:background">@null</item>
+    </style>
+
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:background">@color/pbx_canvas_dark</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>
+`;
+fs.writeFileSync(path.join(valuesV35Dir, 'styles.xml'), stylesV35Xml, 'utf8');
+
+// 4. Write exact Glossy Black Metallic 3D "PB" Adaptive Launcher Icon (API 26+ Vector)
 const drawableDir = path.join(resDir, 'drawable');
 const mipmapV26Dir = path.join(resDir, 'mipmap-anydpi-v26');
 ensureDir(drawableDir);
@@ -112,23 +302,36 @@ const iconBgXml = `<?xml version="1.0" encoding="utf-8"?>
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Glossy obsidian-charcoal vertical metallic gradient -->
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="12"
-                android:startY="10"
-                android:endX="96"
-                android:endY="98"
+                android:startX="54"
+                android:startY="6"
+                android:endX="54"
+                android:endY="102"
                 android:type="linear">
-                <item android:offset="0" android:color="#2563EB" />
-                <item android:offset="0.55" android:color="#1D4ED8" />
-                <item android:offset="1" android:color="#081020" />
+                <item android:offset="0" android:color="#4B4B52" />
+                <item android:offset="0.22" android:color="#2E2E33" />
+                <item android:offset="0.68" android:color="#18181B" />
+                <item android:offset="1" android:color="#09090B" />
             </gradient>
         </aapt:attr>
     </path>
-    <path
-        android:pathData="M54,14 A40,40 0 1,1 53.99,14 Z"
-        android:fillColor="#18FFFFFF" />
+    <!-- Soft glass specular top dome reflection -->
+    <path android:pathData="M0,0h108v52C82,60 26,60 0,52z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54"
+                android:startY="0"
+                android:endX="54"
+                android:endY="56"
+                android:type="linear">
+                <item android:offset="0" android:color="#40FFFFFF" />
+                <item android:offset="1" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>
 `;
 
@@ -138,18 +341,20 @@ const iconFgXml = `<?xml version="1.0" encoding="utf-8"?>
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Letter P -->
+    <!-- Subtle inner 3D glass rim highlight inside adaptive safe zone -->
+    <path
+        android:pathData="M34,20 L74,20 C82,20 88,26 88,34 L88,74 C88,82 82,88 74,88 L34,88 C26,88 20,82 20,74 L20,34 C20,26 26,20 34,20 Z"
+        android:strokeWidth="1.5"
+        android:strokeColor="#28FFFFFF"
+        android:fillColor="#00000000" />
+    <!-- Bold Pure White Letter P (centered in adaptive safe zone) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M29,34 L44,34 C50.5,34 54.5,37.8 54.5,43.8 C54.5,49.8 50.5,53.6 44,53.6 L36.5,53.6 L36.5,72 L29,72 Z M36.5,40.4 L36.5,47.2 L43.2,47.2 C45.8,47.2 47.2,45.9 47.2,43.8 C47.2,41.7 45.8,40.4 43.2,40.4 Z" />
-    <!-- Letter B -->
+        android:pathData="M31.5,39 L44.5,39 C50.2,39 53.7,42.3 53.7,47.6 C53.7,52.9 50.2,56.2 44.5,56.2 L38.2,56.2 L38.2,69 L31.5,69 Z M38.2,44.4 L38.2,50.8 L43.8,50.8 C46.1,50.8 47.4,49.6 47.4,47.6 C47.4,45.6 46.1,44.4 43.8,44.4 Z" />
+    <!-- Bold Pure White Letter B (centered in adaptive safe zone) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M58,34 L72.5,34 C78.5,34 82,37.1 82,42.2 C82,45.6 80.1,48.1 76.9,49.2 C80.8,50.3 83.2,53.3 83.2,57.4 C83.2,63.2 79,66.6 72.4,66.6 L58,66.6 Z M65.4,40.1 L65.4,46.7 L71.4,46.7 C73.8,46.7 75.1,45.5 75.1,43.4 C75.1,41.3 73.8,40.1 71.4,40.1 Z M65.4,52.5 L65.4,60.4 L71.9,60.4 C74.6,60.4 76.1,59.1 76.1,56.5 C76.1,53.9 74.6,52.5 71.9,52.5 Z" />
-    <!-- Subtle Cyan Accent Pill under PB -->
-    <path
-        android:fillColor="#38BDF8"
-        android:pathData="M58,70 L82,70 C83.1,70 84,70.9 84,72 C84,73.1 83.1,74 82,74 L58,74 C56.9,74 56,73.1 56,72 C56,70.9 56.9,70 58,70 Z" />
+        android:pathData="M56.8,39 L69.2,39 C74.5,39 77.6,41.7 77.6,46.2 C77.6,49.2 75.9,51.4 73.1,52.4 C76.6,53.4 78.7,56.1 78.7,59.9 C78.7,65.2 75.0,69 69.1,69 L56.8,69 Z M63.4,44.2 L63.4,50.2 L68.3,50.2 C70.4,50.2 71.6,49.1 71.6,47.2 C71.6,45.3 70.4,44.2 68.3,44.2 Z M63.4,55.3 L63.4,63.7 L68.8,63.7 C71.2,63.7 72.5,62.4 72.5,59.5 C72.5,56.6 71.2,55.3 68.8,55.3 Z" />
 </vector>
 `;
 
@@ -170,4 +375,27 @@ fs.writeFileSync(path.join(drawableDir, 'ic_launcher_foreground.xml'), iconFgXml
 fs.writeFileSync(path.join(mipmapV26Dir, 'ic_launcher.xml'), adaptiveLauncherXml, 'utf8');
 fs.writeFileSync(path.join(mipmapV26Dir, 'ic_launcher_round.xml'), adaptiveLauncherXml, 'utf8');
 
-console.log('Configured PB X Store Admin adaptive launcher icons & Android build settings.');
+// 5. Overwrite ALL legacy mipmap PNG icons so every launcher & APK installer shows the black PB logo
+const mipmapDensities = [
+  { folder: 'mipmap-mdpi', size: 48 },
+  { folder: 'mipmap-hdpi', size: 72 },
+  { folder: 'mipmap-xhdpi', size: 96 },
+  { folder: 'mipmap-xxhdpi', size: 144 },
+  { folder: 'mipmap-xxxhdpi', size: 192 },
+];
+
+for (const { folder, size } of mipmapDensities) {
+  const targetDir = path.join(resDir, folder);
+  ensureDir(targetDir);
+  const squirclePng = renderBlackPBIconPng(size, 'squircle');
+  const roundPng = renderBlackPBIconPng(size, 'round');
+  fs.writeFileSync(path.join(targetDir, 'ic_launcher.png'), squirclePng);
+  fs.writeFileSync(path.join(targetDir, 'ic_launcher_round.png'), roundPng);
+  // Remove Capacitor's old foreground PNG if present so nothing overrides our black PB vector
+  const legacyFg = path.join(targetDir, 'ic_launcher_foreground.png');
+  if (fs.existsSync(legacyFg)) {
+    fs.rmSync(legacyFg, { force: true });
+  }
+}
+
+console.log('Configured glossy black PB main launcher icon (vector + all mipmap PNGs) & Android 15 inset fix.');

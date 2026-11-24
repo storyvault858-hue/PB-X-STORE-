@@ -9,12 +9,12 @@ interface BrandEmblem3DProps {
 export function BrandEmblem3D({ size = 'md', animated = false }: BrandEmblem3DProps) {
   const dims =
     size === 'sm'
-      ? 'w-9 h-9 rounded-xl text-xs'
+      ? 'w-8 h-8 rounded-[10px] text-[11px]'
       : size === 'lg'
-        ? 'w-20 h-20 rounded-[24px] text-2xl'
-        : 'w-14 h-14 rounded-2xl text-lg';
+        ? 'w-16 h-16 sm:w-20 sm:h-20 rounded-[20px] sm:rounded-[24px] text-xl sm:text-2xl'
+        : 'w-12 h-12 sm:w-14 sm:h-14 rounded-2xl text-base sm:text-lg';
 
-  const depthOffset = size === 'sm' ? '3px' : size === 'lg' ? '7px' : '5px';
+  const depthOffset = size === 'sm' ? '2.5px' : size === 'lg' ? '6px' : '4px';
 
   const emblemFace = (
     <div className="relative inline-flex select-none">
@@ -22,7 +22,7 @@ export function BrandEmblem3D({ size = 'md', animated = false }: BrandEmblem3DPr
       {animated && size === 'lg' && (
         <div
           aria-hidden="true"
-          className="absolute -inset-2.5 rounded-[30px] pointer-events-none opacity-65 animate-orbit"
+          className="absolute -inset-2 sm:-inset-2.5 rounded-[25px] sm:rounded-[30px] pointer-events-none opacity-65 animate-orbit"
           style={{
             background:
               'conic-gradient(from 0deg, transparent 0%, var(--accent-bright) 28%, transparent 55%, var(--accent) 82%, transparent 100%)',
