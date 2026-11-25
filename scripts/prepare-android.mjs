@@ -206,8 +206,21 @@ if (fs.existsSync(manifestPath)) {
     );
   }
 
+  // Prevent Android from panning or violently shrinking the WebView when the keyboard opens
+  if (manifest.includes('android:windowSoftInputMode=')) {
+    manifest = manifest.replace(
+      /android:windowSoftInputMode="[^"]*"/g,
+      'android:windowSoftInputMode="adjustNothing"'
+    );
+  } else {
+    manifest = manifest.replace(
+      '<activity',
+      '<activity\n            android:windowSoftInputMode="adjustNothing"'
+    );
+  }
+
   fs.writeFileSync(manifestPath, manifest, 'utf8');
-  console.log('Updated AndroidManifest.xml');
+  console.log('Updated AndroidManifest.xml (cleartext + adjustNothing)');
 }
 
 // 2. Configure versionCode & versionName in android/app/build.gradle
@@ -339,9 +352,8 @@ public class MainActivity extends BridgeActivity {
                 Insets bars = windowInsets.getInsets(
                     WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
                 );
-                Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
-                int bottomInset = Math.max(bars.bottom, ime.bottom);
-                view.setPadding(bars.left, bars.top, bars.right, bottomInset);
+                // Pad ONLY system status bar & navigation bar (never shrink on IME keyboard)
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
                 return WindowInsetsCompat.CONSUMED;
             });
             ViewCompat.requestApplyInsets(rootView);

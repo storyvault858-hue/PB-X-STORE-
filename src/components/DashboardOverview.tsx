@@ -1,24 +1,20 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import {
+  ArrowUpRight,
   CheckCircle2,
   ChevronRight,
   Download,
   FileEdit,
   Layers,
   Plus,
-  Star,
 } from 'lucide-react';
-import type { AppRatingSummary, StoreApp } from '../types';
+import type { StoreApp } from '../types';
 import { formatShortDate } from '../lib/firebase';
 import { AppIcon } from './AppIcon';
 
 interface DashboardOverviewProps {
   apps: StoreApp[];
-  ratingsByAppId: Record<string, AppRatingSummary>;
-  overallAverage: number;
-  totalReviews: number;
-  totalComments: number;
   onOpenAdd: () => void;
   onViewBuilds: () => void;
   onManageApp: (id: string) => void;
@@ -26,10 +22,6 @@ interface DashboardOverviewProps {
 
 export function DashboardOverview({
   apps,
-  ratingsByAppId,
-  overallAverage,
-  totalReviews,
-  totalComments,
   onOpenAdd,
   onViewBuilds,
   onManageApp,
@@ -87,7 +79,7 @@ export function DashboardOverview({
             Dashboard Overview
           </h1>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
-            Real-time overview of your PB X Store applications, ratings, and release activity.
+            Real-time overview of your PB X Store applications and release activity.
           </p>
         </div>
 
@@ -123,45 +115,6 @@ export function DashboardOverview({
             </div>
           );
         })}
-      </div>
-
-      {/* User Ratings & Reviews Summary Strip */}
-      <div className="surface-3d rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5 min-w-0">
-          <div
-            className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border border-[var(--border-subtle)]"
-            style={{
-              background: 'var(--surface-inset)',
-              boxShadow: 'var(--shadow-inset)',
-            }}
-          >
-            <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5">
-              <h2 className="text-sm font-bold text-[var(--text-primary)]">
-                Store Ratings &amp; Reviews
-              </h2>
-              <span className="font-mono text-xs font-bold text-[var(--text-primary)] tabular-nums">
-                {totalReviews > 0 ? `${overallAverage.toFixed(1)} / 5.0 ★` : 'No ratings yet'}
-              </span>
-            </div>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5 font-mono tabular-nums">
-              {totalReviews.toLocaleString()} total{' '}
-              {totalReviews === 1 ? 'review' : 'reviews'} · {totalComments.toLocaleString()}{' '}
-              {totalComments === 1 ? 'comment' : 'comments'} across your builds
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={onViewBuilds}
-          className="btn-3d-secondary min-h-[40px] px-4 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          <span>View Builds &amp; Reviews</span>
-          <ChevronRight className="w-3.5 h-3.5" />
-        </button>
       </div>
 
       {/* Publish Readiness Bar */}
@@ -210,7 +163,7 @@ export function DashboardOverview({
             className="text-xs font-semibold text-[var(--accent)] hover:underline flex items-center gap-1 whitespace-nowrap cursor-pointer min-h-[36px] px-1"
           >
             <span>View all builds</span>
-            <ChevronRight className="w-3.5 h-3.5" />
+            <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
@@ -233,69 +186,50 @@ export function DashboardOverview({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
-            {recentBuilds.map((app) => {
-              const ratingSummary = ratingsByAppId[app.id];
-              const hasReviews = ratingSummary && ratingSummary.totalReviews > 0;
-              return (
-                <button
-                  key={app.id}
-                  type="button"
-                  onClick={() => onManageApp(app.id)}
-                  className="surface-3d surface-3d-interactive rounded-2xl p-4 text-left flex items-center justify-between gap-3.5 cursor-pointer w-full"
-                >
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <AppIcon src={app.iconUrl} name={app.name} size="md" />
-                    <div className="min-w-0">
-                      <h3 className="font-bold text-sm text-[var(--text-primary)] truncate">
-                        {app.name}
-                      </h3>
-                      <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-xs text-[var(--text-muted)] mt-1">
-                        <span className="font-mono">v{app.version}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{app.platform || 'Android'}</span>
-                        <span aria-hidden="true">·</span>
-                        <span
-                          className={
-                            app.published
-                              ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
-                              : 'text-amber-600 dark:text-amber-400 font-semibold'
-                          }
-                        >
-                          {app.published ? 'Active' : 'Draft'}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span className="inline-flex items-center gap-0.5 font-mono tabular-nums text-[var(--text-secondary)]">
-                          <Star
-                            className={`w-3 h-3 ${
-                              hasReviews
-                                ? 'text-amber-500 fill-amber-500'
-                                : 'text-[var(--text-muted)] opacity-40'
-                            }`}
-                          />
-                          <span>
-                            {hasReviews
-                              ? `${ratingSummary.averageRating.toFixed(1)} (${ratingSummary.totalReviews})`
-                              : '0 reviews'}
-                          </span>
-                        </span>
-                      </div>
+            {recentBuilds.map((app) => (
+              <button
+                key={app.id}
+                type="button"
+                onClick={() => onManageApp(app.id)}
+                className="surface-3d surface-3d-interactive rounded-2xl p-4 text-left flex items-center justify-between gap-3.5 cursor-pointer w-full"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <AppIcon src={app.iconUrl} name={app.name} size="md" />
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-sm text-[var(--text-primary)] truncate">
+                      {app.name}
+                    </h3>
+                    <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-xs text-[var(--text-muted)] mt-1">
+                      <span className="font-mono">v{app.version}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{app.platform || 'Android'}</span>
+                      <span aria-hidden="true">·</span>
+                      <span
+                        className={
+                          app.published
+                            ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                            : 'text-amber-600 dark:text-amber-400 font-semibold'
+                        }
+                      >
+                        {app.published ? 'Active' : 'Draft'}
+                      </span>
                     </div>
                   </div>
+                </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="hidden sm:block text-right">
-                      <p className="font-mono text-xs font-semibold text-[var(--text-primary)] tabular-nums">
-                        {(app.downloads || 0).toLocaleString()} dl
-                      </p>
-                      <p className="text-[11px] text-[var(--text-muted)]">
-                        {formatShortDate(app.updatedAt || app.createdAt)}
-                      </p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="hidden sm:block text-right">
+                    <p className="font-mono text-xs font-semibold text-[var(--text-primary)] tabular-nums">
+                      {(app.downloads || 0).toLocaleString()} dl
+                    </p>
+                    <p className="text-[11px] text-[var(--text-muted)]">
+                      {formatShortDate(app.updatedAt || app.createdAt)}
+                    </p>
                   </div>
-                </button>
-              );
-            })}
+                  <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
+                </div>
+              </button>
+            ))}
           </div>
         )}
       </div>

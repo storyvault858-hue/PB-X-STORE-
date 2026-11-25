@@ -110,12 +110,35 @@ export function BuildFormView({
   const previewSlug = slugifyText(form.slug || form.name || 'your-app');
   const previewStoreUrl = `${LIVE_SITE_URL}/?app=${previewSlug}`;
 
+  const handleFieldFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT'
+    ) {
+      window.setTimeout(() => {
+        try {
+          const rect = target.getBoundingClientRect();
+          const upperSafeLimit = window.innerHeight * 0.44;
+          if (rect.bottom > upperSafeLimit) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        } catch {
+          // Ignore scroll errors
+        }
+      }, 220);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-      className="space-y-6 max-w-4xl"
+      onFocus={handleFieldFocus}
+      className="space-y-6 max-w-4xl pb-64 lg:pb-0"
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-4">

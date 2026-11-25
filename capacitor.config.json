@@ -1,6 +1,6 @@
 {
-  "appId": "com.pbxstore.app",
-  "appName": "PB X Store",
+  "appId": "com.pbxstore.admin",
+  "appName": "PB X Store Admin",
   "webDir": "dist",
   "server": {
     "androidScheme": "https",

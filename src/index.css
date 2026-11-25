@@ -561,6 +561,17 @@
   .input-3d::placeholder {
     color: var(--text-muted);
   }
+
+  .input-3d:-webkit-autofill,
+  .input-3d:-webkit-autofill:hover,
+  .input-3d:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--text-primary);
+    caret-color: var(--text-primary);
+    box-shadow:
+      0 0 0 1000px var(--surface-inset) inset,
+      var(--shadow-inset);
+    transition: background-color 9999s ease-out 0s;
+  }
 }
 
 /* Signature Animations */

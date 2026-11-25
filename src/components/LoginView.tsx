@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { AlertCircle, ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck } from 'lucide-react';
+import { AlertCircle, ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck, X } from 'lucide-react';
 import { BrandEmblem3D } from './BrandEmblem3D';
 import { ThemeSwitcher } from './ThemeSwitcher';
 
@@ -50,12 +50,15 @@ export function LoginView({ onLogin, externalError }: LoginViewProps) {
       {/* Soft atmospheric halo matching active theme */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[560px] h-[360px] rounded-full blur-[120px] opacity-30"
+        className="pointer-events-none fixed top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[320px] rounded-full blur-[120px] opacity-25"
         style={{ background: 'var(--accent)' }}
       />
 
-      {/* Seamless Top Bar with safe-area top inset */}
-      <header className="relative z-20 w-full max-w-6xl mx-auto px-4 sm:px-8 pt-[max(0.85rem,env(safe-area-inset-top))] pb-2 flex items-center justify-between">
+      {/* Seamless Top Bar */}
+      <header
+        className="relative z-20 w-full max-w-6xl mx-auto px-4 sm:px-8 pb-2 flex items-center justify-between"
+        style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
+      >
         <div className="flex items-center gap-2">
           <BrandEmblem3D size="sm" />
           <span className="text-sm font-extrabold tracking-tight text-[var(--text-primary)] whitespace-nowrap">
@@ -65,39 +68,37 @@ export function LoginView({ onLogin, externalError }: LoginViewProps) {
         <ThemeSwitcher compact align="right" />
       </header>
 
-      {/* Executive 3D Login Stage */}
-      <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-5 sm:py-8">
+      {/* Top-Anchored Mobile Login Stage (stays completely stationary when keyboard opens!) */}
+      <main className="relative z-10 flex-1 flex items-start lg:items-center justify-center px-4 pt-3 pb-10 sm:pt-6 lg:py-8">
         <motion.div
-          initial={{ opacity: 0, y: 18, scale: 0.985 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.36, ease: [0.16, 1, 0.3, 1] }}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
           className="w-full max-w-[400px]"
         >
-          {/* Animated 3D Brand Hero */}
-          <div className="flex flex-col items-center text-center mb-5 sm:mb-7">
-            <div className="mb-4 sm:mb-5 relative flex items-center justify-center">
-              <motion.div
-                aria-hidden="true"
-                animate={{ scale: [1, 1.12, 1], opacity: [0.35, 0.55, 0.35] }}
-                transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}
-                className="absolute w-20 h-20 sm:w-24 sm:h-24 rounded-full blur-2xl pointer-events-none"
-                style={{ background: 'var(--accent)' }}
-              />
-              <div className="relative">
+          {/* Compact Brand Header on Mobile so Email & Password stay well above the keyboard */}
+          <div className="flex items-center lg:flex-col lg:text-center gap-3.5 lg:gap-0 mb-4 lg:mb-6 px-1">
+            <div className="relative flex items-center justify-center shrink-0 lg:mb-4">
+              <div className="lg:hidden">
+                <BrandEmblem3D size="md" />
+              </div>
+              <div className="hidden lg:block">
                 <BrandEmblem3D size="lg" animated />
               </div>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] text-[var(--text-primary)] [text-wrap:balance]">
-              PB X Store
-            </h1>
-            <p className="text-xs sm:text-sm font-medium text-[var(--text-secondary)] mt-1">
-              App Distribution &amp; Control Center
-            </p>
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-[-0.03em] text-[var(--text-primary)] leading-tight">
+                PB X Store
+              </h1>
+              <p className="text-xs sm:text-sm font-medium text-[var(--text-secondary)] mt-0.5">
+                App Distribution &amp; Control Center
+              </p>
+            </div>
           </div>
 
           {/* Sculpted 3D Login Card */}
-          <div className="surface-3d-lg rounded-[24px] sm:rounded-[28px] p-5 sm:p-7 relative overflow-hidden">
+          <div className="surface-3d-lg rounded-[24px] sm:rounded-[28px] p-5 sm:p-6 relative overflow-hidden">
             {/* Accent top specular edge */}
             <div
               aria-hidden="true"
@@ -108,17 +109,17 @@ export function LoginView({ onLogin, externalError }: LoginViewProps) {
               }}
             />
 
-            <div className="relative z-10 mb-4 sm:mb-5">
+            <div className="relative z-10 mb-4">
               <h2 className="text-base sm:text-lg font-bold tracking-tight text-[var(--text-primary)]">
                 Administrator Sign In
               </h2>
               <p className="text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed">
-                Authenticate with your verified PB X Store admin credentials.
+                Sign in with your verified PB X Store admin credentials.
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4 relative z-10" noValidate>
-              <div className="space-y-3.5">
+            <form onSubmit={handleSubmit} className="space-y-3.5 relative z-10" noValidate>
+              <div className="space-y-3">
                 <div>
                   <label
                     htmlFor="login-email"
@@ -131,13 +132,30 @@ export function LoginView({ onLogin, externalError }: LoginViewProps) {
                     <input
                       id="login-email"
                       type="email"
+                      inputMode="email"
                       autoComplete="email"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       required
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (localError) setLocalError('');
+                      }}
                       placeholder="admin@pbxstore.com"
-                      className="input-3d pl-10 pr-3.5 min-h-[42px] sm:min-h-[46px] text-[13px] sm:text-sm"
+                      className="input-3d pl-10 pr-10 min-h-[44px] text-sm text-[var(--text-primary)]"
                     />
+                    {email && (
+                      <button
+                        type="button"
+                        onClick={() => setEmail('')}
+                        aria-label="Clear email"
+                        className="absolute right-1.5 w-8 h-8 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -156,9 +174,12 @@ export function LoginView({ onLogin, externalError }: LoginViewProps) {
                       autoComplete="current-password"
                       required
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (localError) setLocalError('');
+                      }}
                       placeholder="Enter your password"
-                      className="input-3d pl-10 pr-11 min-h-[42px] sm:min-h-[46px] text-[13px] sm:text-sm"
+                      className="input-3d pl-10 pr-11 min-h-[44px] text-sm text-[var(--text-primary)]"
                     />
                     <button
                       type="button"
@@ -176,13 +197,13 @@ export function LoginView({ onLogin, externalError }: LoginViewProps) {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between pt-0.5">
                 <label className="flex items-center gap-2 text-xs font-medium text-[var(--text-secondary)] cursor-pointer select-none min-h-[32px]">
                   <input
                     type="checkbox"
                     checked={remember}
                     onChange={(e) => setRemember(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded accent-[var(--accent)] cursor-pointer"
+                    className="w-4 h-4 rounded accent-[var(--accent)] cursor-pointer"
                   />
                   <span>Remember email</span>
                 </label>
@@ -204,7 +225,7 @@ export function LoginView({ onLogin, externalError }: LoginViewProps) {
               <button
                 type="submit"
                 disabled={submitting}
-                className="btn-3d-primary w-full min-h-[44px] sm:min-h-[48px] rounded-2xl font-bold text-sm flex items-center justify-center gap-2 cursor-pointer"
+                className="btn-3d-primary w-full min-h-[46px] rounded-2xl font-bold text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
                 {submitting ? (
                   <>
@@ -221,7 +242,7 @@ export function LoginView({ onLogin, externalError }: LoginViewProps) {
             </form>
           </div>
 
-          <div className="flex items-center justify-center gap-1.5 text-xs text-[var(--text-muted)] mt-5">
+          <div className="flex items-center justify-center gap-1.5 text-xs text-[var(--text-muted)] mt-4">
             <ShieldCheck className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span>Encrypted PB X Store Admin Portal</span>
           </div>
