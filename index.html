@@ -1,22 +1,22 @@
 <!doctype html>
-<html lang="en" class="dark" data-theme="sapphire">
+<html lang="en" data-theme="titanium">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>PB X Store Control Center</title>
+    <title>PB X Store — Admin Control Center</title>
     <meta
       name="description"
-      content="3D tactile admin control center for managing PB X Store applications, builds, QR distribution, and analytics."
+      content="PB X Store Admin Control Center — Manage Android and iOS builds, QR distribution, live analytics, and user reviews."
     />
-    <meta id="meta-theme-color" name="theme-color" content="#081020" />
+    <meta id="meta-theme-color" name="theme-color" content="#eceef2" />
     <link rel="icon" type="image/svg+xml" href="/pb-icon.svg" />
     <link rel="apple-touch-icon" href="/pb-icon.svg" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta property="og:title" content="PB X Store Control Center" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta property="og:title" content="PB X Store — Admin Control Center" />
     <meta
       property="og:description"
-      content="3D tactile admin control center for managing PB X Store applications, builds, QR distribution, and analytics."
+      content="PB X Store Admin Control Center — Manage Android and iOS builds, QR distribution, live analytics, and user reviews."
     />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -29,9 +29,10 @@
     <script>
       (function () {
         try {
-          var mode = localStorage.getItem('pbx_color_mode') || 'dark';
-          var theme = localStorage.getItem('pbx_accent_theme') || 'sapphire';
+          var mode = localStorage.getItem('pbx_color_mode') || 'light';
+          var theme = localStorage.getItem('pbx_accent_theme') || 'titanium';
           var valid = {
+            titanium: 1,
             sapphire: 1,
             mint: 1,
             sakura: 1,
@@ -43,9 +44,8 @@
             ruby: 1,
             mocha: 1,
             lavender: 1,
-            titanium: 1,
           };
-          if (!valid[theme]) theme = 'sapphire';
+          if (!valid[theme]) theme = 'titanium';
           var root = document.documentElement;
           if (mode === 'dark') {
             root.classList.add('dark');
@@ -55,6 +55,7 @@
           root.setAttribute('data-theme', theme);
           var colors = {
             dark: {
+              titanium: '#0b0c0f',
               sapphire: '#081020',
               mint: '#071713',
               sakura: '#1a0b15',
@@ -66,9 +67,9 @@
               ruby: '#1a080e',
               mocha: '#160f0b',
               lavender: '#0d0e20',
-              titanium: '#0b0c0f',
             },
             light: {
+              titanium: '#eceef2',
               sapphire: '#e8f0fe',
               mint: '#e5f7f1',
               sakura: '#fce9f3',
@@ -80,10 +81,9 @@
               ruby: '#fbe8ed',
               mocha: '#f4ece6',
               lavender: '#ebecfe',
-              titanium: '#eceef2',
             },
           };
-          var bg = (colors[mode] && colors[mode][theme]) || '#081020';
+          var bg = (colors[mode] && colors[mode][theme]) || '#eceef2';
           var meta = document.getElementById('meta-theme-color');
           if (meta) meta.setAttribute('content', bg);
           root.style.backgroundColor = bg;

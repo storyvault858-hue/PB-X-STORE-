@@ -15,6 +15,14 @@ export interface ThemeOption {
 
 export const THEME_OPTIONS: ThemeOption[] = [
   {
+    id: 'titanium',
+    name: 'Titanium',
+    swatch: '#3f3f46',
+    swatchEnd: '#94a3b8',
+    darkCanvas: '#0b0c0f',
+    lightCanvas: '#eceef2',
+  },
+  {
     id: 'sapphire',
     name: 'Sapphire',
     swatch: '#2563eb',
@@ -102,14 +110,6 @@ export const THEME_OPTIONS: ThemeOption[] = [
     darkCanvas: '#0d0e20',
     lightCanvas: '#ebecfe',
   },
-  {
-    id: 'titanium',
-    name: 'Titanium',
-    swatch: '#3f3f46',
-    swatchEnd: '#94a3b8',
-    darkCanvas: '#0b0c0f',
-    lightCanvas: '#eceef2',
-  },
 ];
 
 export function getThemeCanvasColor(mode: ColorMode, theme: ThemeId): string {
@@ -134,9 +134,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setModeState] = useState<ColorMode>(() => {
     try {
       const saved = localStorage.getItem('pbx_color_mode');
-      return saved === 'light' ? 'light' : 'dark';
+      return saved === 'dark' ? 'dark' : 'light';
     } catch {
-      return 'dark';
+      return 'light';
     }
   });
 
@@ -146,9 +146,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       if (saved && THEME_OPTIONS.some((t) => t.id === saved)) {
         return saved;
       }
-      return 'sapphire';
+      return 'titanium';
     } catch {
-      return 'sapphire';
+      return 'titanium';
     }
   });
 

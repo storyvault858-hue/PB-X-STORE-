@@ -46,7 +46,7 @@ export function LoginView({ onLogin, externalError }: LoginViewProps) {
   };
 
   return (
-    <div className="min-h-screen w-full canvas-bg flex flex-col relative overflow-hidden">
+    <div className="min-h-[100dvh] w-full canvas-bg flex flex-col relative overflow-x-clip">
       {/* Soft atmospheric halo matching active theme */}
       <div
         aria-hidden="true"

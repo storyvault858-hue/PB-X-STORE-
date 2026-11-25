@@ -223,7 +223,7 @@ if (fs.existsSync(buildGradlePath)) {
   console.log(`Updated build.gradle -> versionCode=${runNumber}, versionName=1.0.${runNumber}`);
 }
 
-// 3. Configure clean dark launch colors & styles + fix Android 15/16 status bar overlap
+// 3. Configure clean Titanium Light launch colors & styles + fix Android 15/16 status/nav bar overlap
 const valuesDir = path.join(resDir, 'values');
 const valuesV35Dir = path.join(resDir, 'values-v35');
 ensureDir(valuesDir);
@@ -231,10 +231,10 @@ ensureDir(valuesV35Dir);
 
 const colorsXml = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#18181B</color>
-    <color name="colorPrimaryDark">#0B0C0F</color>
+    <color name="colorPrimary">#27272A</color>
+    <color name="colorPrimaryDark">#ECEEF2</color>
     <color name="colorAccent">#52525B</color>
-    <color name="pbx_canvas_dark">#0B0C0F</color>
+    <color name="pbx_canvas_light">#ECEEF2</color>
 </resources>
 `;
 fs.writeFileSync(path.join(valuesDir, 'colors.xml'), colorsXml, 'utf8');
@@ -253,27 +253,31 @@ if (fs.existsSync(stylesPath)) {
     styles = styles.replace(
       '<style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">',
       `<style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="android:windowBackground">@color/pbx_canvas_dark</item>
-        <item name="android:statusBarColor">@color/pbx_canvas_dark</item>
-        <item name="android:navigationBarColor">@color/pbx_canvas_dark</item>
+        <item name="android:windowBackground">@color/pbx_canvas_light</item>
+        <item name="android:statusBarColor">@color/pbx_canvas_light</item>
+        <item name="android:navigationBarColor">@color/pbx_canvas_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:fitsSystemWindows">true</item>`
     );
   }
   styles = styles.replace(
     '<item name="android:background">@drawable/splash</item>',
-    '<item name="android:background">@color/pbx_canvas_dark</item>'
+    '<item name="android:background">@color/pbx_canvas_light</item>'
   );
   fs.writeFileSync(stylesPath, styles, 'utf8');
-  console.log('Updated styles.xml with dark launch background & system bar insets');
+  console.log('Updated styles.xml with Titanium Light launch background & system bar insets');
 }
 
-// Opt out of Android 15+ forced edge-to-edge overlap so StatusBar color & top bar never collide
+// Opt out of Android 15 forced edge-to-edge overlap & keep light status/nav bar icons
 const stylesV35Xml = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="android:windowBackground">@color/pbx_canvas_dark</item>
-        <item name="android:statusBarColor">@color/pbx_canvas_dark</item>
-        <item name="android:navigationBarColor">@color/pbx_canvas_dark</item>
+        <item name="android:windowBackground">@color/pbx_canvas_light</item>
+        <item name="android:statusBarColor">@color/pbx_canvas_light</item>
+        <item name="android:navigationBarColor">@color/pbx_canvas_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:fitsSystemWindows">true</item>
         <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
         <item name="windowActionBar">false</item>
@@ -282,12 +286,72 @@ const stylesV35Xml = `<?xml version="1.0" encoding="utf-8"?>
     </style>
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@color/pbx_canvas_dark</item>
+        <item name="android:background">@color/pbx_canvas_light</item>
+        <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
     </style>
 </resources>
 `;
 fs.writeFileSync(path.join(valuesV35Dir, 'styles.xml'), stylesV35Xml, 'utf8');
+
+// 3b. Patch MainActivity.java with AndroidX WindowInsetsCompat listener
+// Guarantees status bar, display cutout, 3-button/gesture nav bar, and IME keyboard
+// NEVER overlap header or trap bottom content on Android 10 through Android 16 (API 36).
+function findMainActivity(dir) {
+  if (!fs.existsSync(dir)) return null;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const found = findMainActivity(full);
+      if (found) return found;
+    } else if (entry.name === 'MainActivity.java') {
+      return full;
+    }
+  }
+  return null;
+}
+
+const javaSrcDir = path.join(appDir, 'src', 'main', 'java');
+const mainActivityPath = findMainActivity(javaSrcDir);
+if (mainActivityPath) {
+  const existingJava = fs.readFileSync(mainActivityPath, 'utf8');
+  const pkgMatch = existingJava.match(/^\s*package\s+([^;]+);/m);
+  const pkgLine = pkgMatch ? `package ${pkgMatch[1].trim()};` : 'package com.pbxstore.admin;';
+
+  const patchedMainActivity = `${pkgLine}
+
+import android.os.Bundle;
+import android.view.View;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        final View rootView = findViewById(android.R.id.content);
+        if (rootView != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(rootView, (view, windowInsets) -> {
+                Insets bars = windowInsets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
+                );
+                Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
+                int bottomInset = Math.max(bars.bottom, ime.bottom);
+                view.setPadding(bars.left, bars.top, bars.right, bottomInset);
+                return WindowInsetsCompat.CONSUMED;
+            });
+            ViewCompat.requestApplyInsets(rootView);
+        }
+    }
+}
+`;
+  fs.writeFileSync(mainActivityPath, patchedMainActivity, 'utf8');
+  console.log(`Patched ${path.relative(rootDir, mainActivityPath)} with WindowInsetsCompat system-bar padding.`);
+}
 
 // 4. Write exact Glossy Black Metallic 3D "PB" Adaptive Launcher Icon (API 26+ Vector)
 const drawableDir = path.join(resDir, 'drawable');

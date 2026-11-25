@@ -8,4 +8,6 @@ coverage/
 !.env.example
 android/
 PB-X-Store-Control-Center.apk
+PB-X-Store.apk
+
 

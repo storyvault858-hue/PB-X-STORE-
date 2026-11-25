@@ -1,6 +1,7 @@
 export type ColorMode = 'dark' | 'light';
 
 export type ThemeId =
+  | 'titanium'
   | 'sapphire'
   | 'mint'
   | 'sakura'
@@ -11,14 +12,55 @@ export type ThemeId =
   | 'matcha'
   | 'ruby'
   | 'mocha'
-  | 'lavender'
-  | 'titanium';
+  | 'lavender';
 
-export type ActiveView = 'dashboard' | 'builds' | 'add' | 'manage';
+export type ActiveView = 'dashboard' | 'builds' | 'reviews' | 'add' | 'manage';
 
 export type PlatformType = 'Android' | 'iOS';
 
 export type ExpiryMode = 'lifetime' | 'date';
+
+export interface RawReviewRecord {
+  id?: string;
+  appId?: string;
+  appSlug?: string;
+  rating?: number;
+  stars?: number;
+  comment?: string;
+  review?: string;
+  text?: string;
+  message?: string;
+  author?: string;
+  userName?: string;
+  name?: string;
+  version?: string;
+  device?: string;
+  createdAt?: string | number;
+  submittedAt?: string | number;
+  timestamp?: string | number;
+}
+
+export interface AppReview {
+  id: string;
+  appId: string;
+  appName: string;
+  appSlug: string;
+  rating: number;
+  comment: string;
+  author: string;
+  version?: string;
+  createdAt: string;
+  timestampMs: number;
+  sourcePath: 'nested' | 'root';
+}
+
+export interface AppRatingSummary {
+  averageRating: number;
+  totalReviews: number;
+  commentCount: number;
+  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
+  reviews: AppReview[];
+}
 
 export interface StoreApp {
   id: string;
@@ -48,6 +90,11 @@ export interface StoreApp {
   linkOpens?: number;
   uniqueDevices?: number;
   successRate?: string;
+  rating?: number;
+  averageRating?: number;
+  reviewCount?: number;
+  reviewsCount?: number;
+  reviews?: Record<string, RawReviewRecord> | RawReviewRecord[] | null;
 }
 
 export interface AppFormValues {

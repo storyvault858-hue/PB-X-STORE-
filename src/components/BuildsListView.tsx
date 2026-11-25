@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Copy, Plus, QrCode, Search, Settings2, X } from 'lucide-react';
-import type { StoreApp } from '../types';
+import { Copy, Plus, QrCode, Search, Settings2, Star, X } from 'lucide-react';
+import type { AppRatingSummary, StoreApp } from '../types';
 import { getAppStoreUrl, getExpiryStatus } from '../lib/firebase';
 import { AppIcon } from './AppIcon';
 
 interface BuildsListViewProps {
   apps: StoreApp[];
+  ratingsByAppId: Record<string, AppRatingSummary>;
   serverNow: number;
   onOpenAdd: () => void;
   onManageApp: (id: string) => void;
@@ -19,6 +20,7 @@ type PlatformFilter = 'all' | 'Android' | 'iOS';
 
 export function BuildsListView({
   apps,
+  ratingsByAppId,
   serverNow,
   onOpenAdd,
   onManageApp,
@@ -208,6 +210,8 @@ export function BuildsListView({
               app.expiryTime
             );
             const url = getAppStoreUrl(app);
+            const ratingSummary = ratingsByAppId[app.id];
+            const hasReviews = ratingSummary && ratingSummary.totalReviews > 0;
 
             return (
               <div
@@ -253,6 +257,21 @@ export function BuildsListView({
                           <span>{app.category}</span>
                         </>
                       )}
+                      <span aria-hidden="true">·</span>
+                      <span className="inline-flex items-center gap-0.5 font-mono tabular-nums text-[var(--text-secondary)]">
+                        <Star
+                          className={`w-3 h-3 ${
+                            hasReviews
+                              ? 'text-amber-500 fill-amber-500'
+                              : 'text-[var(--text-muted)] opacity-40'
+                          }`}
+                        />
+                        <span>
+                          {hasReviews
+                            ? `${ratingSummary.averageRating.toFixed(1)} (${ratingSummary.totalReviews})`
+                            : '0 reviews'}
+                        </span>
+                      </span>
                       <span aria-hidden="true">·</span>
                       <span
                         className={

@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PB X Store - Premium APK Distribution</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    
+    <style>
+        * { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background-color: #000000; color: #ffffff; overflow-x: hidden; }
+        
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #000000; }
+        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 10px; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.25s ease-out forwards; }
+
+        .beta-card { background-color: #09090b; border: 1px solid #1f1f22; border-radius: 1.25rem; }
+        .beta-box { background-color: #000000; border: 1px solid #1f1f22; border-radius: 0.75rem; padding: 1rem; }
+
+        .app-card {
+            background-color: #09090b; 
+            border: 1px solid #1f1f22; 
+            border-radius: 1rem;
+            transition: transform 0.1s ease;
+        }
+        .app-card:active { transform: scale(0.97); }
+
+        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        
+        .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.2s ease-out; }
+        .accordion.active .accordion-content { max-height: 500px; }
+        .accordion.active .accordion-icon { transform: rotate(180deg); }
+        
+        .btn-press:active { transform: scale(0.96); opacity: 0.8; }
+        
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .share-modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(4px);
+            z-index: 100; display: flex; align-items: flex-end; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+        }
+        .share-modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .share-modal-content {
+            background: #09090b; width: 100%; max-width: 400px;
+            border-top-left-radius: 1.5rem; border-top-right-radius: 1.5rem;
+            padding: 1.5rem; border: 1px solid #1f1f22; border-bottom: none;
+            transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .share-modal-overlay.active .share-modal-content { transform: translateY(0); }
+        
+        #qr-container svg { 
+            width: 100%; 
+            height: 100%; 
+            display: block; 
+            shape-rendering: crispEdges;
+        }
+    </style>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getDatabase, ref, onValue, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyA0lhHdupnDuzS42GVesC78NL_e84o7Ysc",
+            authDomain: "pb-x-store.firebaseapp.com",
+            databaseURL: "https://pb-x-store-default-rtdb.firebaseio.com",
+            projectId: "pb-x-store",
+            storageBucket: "pb-x-store.firebasestorage.app",
+            messagingSenderId: "740102526435",
+            appId: "1:740102526435:web:5f3c1581ab4fd9bd8b7cd6"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        const LIVE_SITE_URL = "https://pbxstore1.site.je"; 
+
+        let allApps = [];
+        let currentFilteredApps = [];
+        let searchQuery = "";
+        let selectedCategory = "All";
+        let currentPublicUrl = ""; 
+        let currentAppIcon = "";
+        let currentAppName = "";
+
+        window.showToast = function(message) {
+            let toast = document.getElementById('toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'toast';
+                toast.className = 'fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-xl transition-all duration-300 opacity-0 translate-y-4 z-[110] flex items-center space-x-2 pointer-events-none';
+                document.body.appendChild(toast);
+            }
+            toast.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><span>${message}</span>`;
+            
+            setTimeout(() => { toast.classList.remove('opacity-0', 'translate-y-4'); }, 100);
+            setTimeout(() => { toast.classList.add('opacity-0', 'translate-y-4'); }, 2500);
+        }
+
+        function copyToClipboard(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(() => window.showToast('Link Copied!')).catch(() => fallbackCopy(text));
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function fallbackCopy(text) {
+            var textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.top = "0"; textArea.style.left = "0"; textArea.style.position = "fixed"; textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.focus(); textArea.select();
+            try {
+                var successful = document.execCommand('copy');
+                if (successful) window.showToast('Link Copied!');
+                else prompt("Copy this link:", text);
+            } catch (err) { prompt("Copy this link:", text); }
+            document.body.removeChild(textArea);
+        }
+
+        function shareQRCode() {
+            const qrContainer = document.getElementById('qr-container');
+            const canvas = qrContainer.querySelector('canvas');
+            const img = qrContainer.querySelector('img');
+            
+            const finalCanvas = document.createElement("canvas");
+            const ctx = finalCanvas.getContext("2d");
+            const size = 600; 
+            finalCanvas.width = size;
+            finalCanvas.height = size;
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, size, size);
+
+            function drawLogoAndShare() {
+                if (currentAppIcon) {
+                    const logo = new Image();
+                    logo.crossOrigin = "Anonymous"; 
+                    logo.src = currentAppIcon;
+                    logo.onload = () => {
+                        try {
+                            const logoSize = 100;
+                            const x = (size - logoSize) / 2;
+                            const y = (size - logoSize) / 2;
+                            ctx.fillStyle = "white";
+                            ctx.beginPath();
+                            if (ctx.roundRect) { ctx.roundRect(x, y, logoSize, logoSize, 16); } 
+                            else { ctx.rect(x, y, logoSize, logoSize); }
+                            ctx.fill();
+                            const padding = 8;
+                            ctx.drawImage(logo, x + padding, y + padding, logoSize - (padding * 2), logoSize - (padding * 2));
+                        } catch (error) {}
+                        triggerShareOrFallback(finalCanvas);
+                    };
+                    logo.onerror = () => { triggerShareOrFallback(finalCanvas); };
+                } else {
+                    triggerShareOrFallback(finalCanvas);
+                }
+            }
+
+            if (canvas) {
+                ctx.drawImage(canvas, 0, 0, size, size);
+                drawLogoAndShare();
+            } else if (img && img.src) {
+                const qrImg = new Image();
+                qrImg.onload = () => { ctx.drawImage(qrImg, 0, 0, size, size); drawLogoAndShare(); };
+                qrImg.onerror = () => { triggerShareOrFallback(finalCanvas); };
+                qrImg.src = img.src;
+            } else {
+                triggerShareOrFallback(finalCanvas);
+            }
+        }
+
+        function triggerShareOrFallback(canvas) {
+            canvas.toBlob((blob) => {
+                if (!blob) return;
+                const file = new File([blob], `${currentAppName.replace(/\s+/g, '-')}-QR.png`, { type: "image/png" });
+
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    navigator.share({
+                        files: [file],
+                        title: `${currentAppName} QR Code`,
+                    }).catch(() => {
+                        showQRPopup(canvas.toDataURL("image/png"));
+                    });
+                } else {
+                    showQRPopup(canvas.toDataURL("image/png"));
+                }
+            }, 'image/png');
+        }
+
+        function showQRPopup(dataURL) {
+            document.getElementById('qr-popup-img').src = dataURL;
+            document.getElementById('qr-popup-modal').classList.remove('hidden');
+            document.getElementById('qr-popup-modal').classList.add('flex');
+        }
+
+        window.closeQRPopup = function() {
+            document.getElementById('qr-popup-modal').classList.add('hidden');
+            document.getElementById('qr-popup-modal').classList.remove('flex');
+        }
+
+        function openShareModal(appName, publicUrl) {
+            const text = `Download ${appName} from PB X Store:`;
+            const encodedText = encodeURIComponent(text);
+            const encodedUrl = encodeURIComponent(publicUrl);
+            
+            document.getElementById('share-wa').href = `https://wa.me/?text=${encodedText}%0A${encodedUrl}`;
+            document.getElementById('share-tg').href = `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`;
+            document.getElementById('share-fb').href = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
+            document.getElementById('share-tw').href = `https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedText}`;
+            
+            document.getElementById('share-copy').onclick = () => {
+                copyToClipboard(publicUrl);
+                closeShareModal();
+            };
+
+            document.getElementById('share-modal').classList.add('active');
+        }
+
+        window.closeShareModal = function() {
+            document.getElementById('share-modal').classList.remove('active');
+        }
+
+        window.goToApp = function(slug) {
+            window.history.pushState({ app: slug }, '', `?app=${slug}`);
+            handleRouting();
+            window.scrollTo(0, 0);
+        };
+
+        window.goHome = function() {
+            window.history.pushState({}, '', window.location.pathname);
+            handleRouting();
+            window.scrollTo(0, 0);
+        };
+
+        window.addEventListener('popstate', () => {
+            handleRouting();
+            window.scrollTo(0, 0);
+        });
+
+        function fetchPublishedApps() {
+            const appsRef = query(ref(db, 'apps'), orderByChild('published'), equalTo(true));
+            
+            onValue(appsRef, (snapshot) => {
+                document.getElementById('initial-loader').classList.add('hidden');
+                
+                allApps = [];
+                snapshot.forEach((childSnapshot) => {
+                    const data = childSnapshot.val();
+                    data.id = childSnapshot.key;
+                    allApps.push(data);
+                });
+
+                allApps.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                
+                populateCategories();
+                handleRouting();
+                renderCatalog();
+
+            }, (error) => {
+                console.error("Database error:", error);
+                document.getElementById('initial-loader').classList.add('hidden');
+            });
+        }
+
+        function handleRouting() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const appSlug = urlParams.get('app');
+
+            if (appSlug) {
+                const appData = allApps.find(a => a.slug === appSlug);
+                if (appData) {
+                    checkPasswordAndRender(appData);
+                } else {
+                    showNotFound();
+                }
+            } else {
+                showHomepage();
+            }
+        }
+
+        function checkPasswordAndRender(appData) {
+            if (!appData.password) {
+                renderAppDetails(appData);
+                return;
+            }
+
+            const sessionKey = `unlocked_${appData.id}`;
+            if (sessionStorage.getItem(sessionKey) === 'true') {
+                renderAppDetails(appData);
+                return;
+            }
+
+            document.getElementById('homepage-view').classList.add('hidden');
+            document.getElementById('app-details-view').classList.add('hidden');
+            document.getElementById('notfound-view').classList.add('hidden');
+            
+            const passView = document.getElementById('password-view');
+            passView.classList.remove('hidden');
+            document.title = "Protected App - PB X Store";
+
+            document.getElementById('pass-app-name').textContent = `${appData.name} is protected`;
+            const input = document.getElementById('app-password-input');
+            input.value = '';
+            
+            document.getElementById('unlock-btn').onclick = () => {
+                if (input.value === appData.password) {
+                    sessionStorage.setItem(sessionKey, 'true');
+                    passView.classList.add('hidden');
+                    renderAppDetails(appData);
+                } else {
+                    document.getElementById('pass-error').classList.remove('hidden');
+                    input.classList.add('border-red-500');
+                    setTimeout(() => input.classList.remove('border-red-500'), 1000);
+                }
+            };
+        }
+
+        function showHomepage() {
+            document.getElementById('homepage-view').classList.remove('hidden');
+            document.getElementById('app-details-view').classList.add('hidden');
+            document.getElementById('notfound-view').classList.add('hidden');
+            document.getElementById('password-view').classList.add('hidden');
+            document.title = "PB X Store - Premium APK Distribution";
+        }
+
+        function showNotFound() {
+            document.getElementById('homepage-view').classList.add('hidden');
+            document.getElementById('app-details-view').classList.add('hidden');
+            document.getElementById('password-view').classList.add('hidden');
+            document.getElementById('notfound-view').classList.remove('hidden');
+        }
+
+        function renderAppDetails(app) {
+            document.getElementById('homepage-view').classList.add('hidden');
+            document.getElementById('notfound-view').classList.add('hidden');
+            document.getElementById('password-view').classList.add('hidden');
+            const view = document.getElementById('app-details-view');
+            view.classList.remove('hidden');
+            document.title = `${app.name} - PB X Store`;
+
+            currentAppName = app.name;
+            currentAppIcon = app.iconUrl || '';
+
+            const iconImg = document.getElementById('detail-icon');
+            iconImg.src = currentAppIcon || 'https://via.placeholder.com/128/18181b/ffffff?text=APP';
+            iconImg.onerror = () => { iconImg.src = 'https://via.placeholder.com/128/18181b/ffffff?text=APP'; };
+
+            document.getElementById('detail-name').textContent = app.name;
+            document.getElementById('badge-version').textContent = `v${app.version}`;
+            document.getElementById('badge-size').textContent = app.fileSize || 'N/A';
+            
+            let expiryText = 'Lifetime Access'; 
+            if (app.expiryDate) {
+                const diff = Math.ceil((new Date(app.expiryDate) - new Date()) / (1000 * 60 * 60 * 24));
+                if (diff > 0) expiryText = `Expires in ${diff} days`;
+            }
+            document.getElementById('detail-expiry-text').textContent = expiryText;
+            
+            const dlBtn = document.getElementById('detail-download-btn');
+            if (app.apkUrl) {
+                dlBtn.href = app.apkUrl;
+                dlBtn.removeAttribute('target'); 
+                dlBtn.classList.remove('opacity-50', 'pointer-events-none');
+                dlBtn.onclick = function(e) { window.showToast('Download Started...'); };
+            } else {
+                dlBtn.href = 'javascript:void(0)';
+                dlBtn.classList.add('opacity-50', 'pointer-events-none');
+                dlBtn.onclick = null;
+            }
+
+            document.getElementById('grid-app-name').textContent = app.name;
+            document.getElementById('grid-version').textContent = `v${app.version}`;
+            document.getElementById('grid-size').textContent = app.fileSize || 'N/A';
+            document.getElementById('grid-uploaded').textContent = new Date(app.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+            document.getElementById('tech-platform').textContent = app.platform || 'Android';
+            document.getElementById('tech-bundle').textContent = app.bundleId || 'N/A';
+            document.getElementById('tech-android').textContent = app.androidMinVersion || 'Varies';
+
+            // =====================================================================
+            // 🔥 QR CODE — Admin ke SAME library (qrcodejs) + SAME config (Level H)
+            //    Isliye pattern bilkul identical aayega admin wale QR se.
+            // =====================================================================
+            const qrContainer = document.getElementById('qr-container');
+            qrContainer.innerHTML = ''; 
+            qrContainer.style.overflow = 'hidden';
+
+            currentPublicUrl = app.appUrl || `${LIVE_SITE_URL}/?app=${app.slug}`;
+
+            // अगर future में admin ने QR image DB में save की हो तो सीधे वो दिखाओ
+            if (app.qrCodeImage) {
+                const img = document.createElement('img');
+                img.src = app.qrCodeImage;
+                img.alt = app.name + ' QR';
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.display = 'block';
+                img.style.objectFit = 'contain';
+                qrContainer.appendChild(img);
+            } else {
+                // Admin जैसा exact same QR generate करो (same lib, same Level H)
+                new QRCode(qrContainer, {
+                    text: currentPublicUrl,
+                    width: 520,
+                    height: 520,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+                const generated = qrContainer.querySelector('canvas, img');
+                if (generated) {
+                    generated.style.width = '100%';
+                    generated.style.height = '100%';
+                    generated.style.display = 'block';
+                }
+            }
+
+            const logoImg = document.getElementById('qr-logo-img');
+            logoImg.src = currentAppIcon || 'https://via.placeholder.com/128/18181b/ffffff?text=APP';
+            logoImg.onerror = () => { logoImg.src = 'https://via.placeholder.com/128/18181b/ffffff?text=APP'; };
+
+            document.getElementById('qr-link-text').textContent = currentPublicUrl.replace('https://', '').replace('http://', '');
+
+            document.getElementById('btn-share-build').onclick = () => {
+                openShareModal(app.name, currentPublicUrl);
+            };
+
+            document.getElementById('btn-copy-link').onclick = () => {
+                copyToClipboard(currentPublicUrl);
+            };
+
+            document.getElementById('btn-share-qr').onclick = () => {
+                shareQRCode();
+            };
+        }
+
+        function populateCategories() {
+            const categories = ['All', ...new Set(allApps.map(app => app.category))];
+            const container = document.getElementById('category-pills');
+            container.innerHTML = '';
+            
+            categories.forEach(cat => {
+                const btn = document.createElement('button');
+                btn.className = `whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-medium transition ${cat === 'All' ? 'bg-blue-600 text-white' : 'bg-[#18181b] text-[#a1a1aa] border border-[#27272a] hover:border-blue-500'}`;
+                btn.textContent = cat;
+                btn.onclick = () => {
+                    selectedCategory = cat;
+                    Array.from(container.children).forEach(c => {
+                        c.className = `whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-medium transition ${c.textContent === cat ? 'bg-blue-600 text-white' : 'bg-[#18181b] text-[#a1a1aa] border border-[#27272a] hover:border-blue-500'}`;
+                    });
+                    renderCatalog();
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        function renderCatalog() {
+            const grid = document.getElementById('catalog-grid');
+            grid.innerHTML = '';
+
+            currentFilteredApps = allApps.filter(app => {
+                const matchesSearch = 
+                    app.name.toLowerCase().includes(searchQuery) ||
+                    app.shortDescription.toLowerCase().includes(searchQuery) ||
+                    app.category.toLowerCase().includes(searchQuery) ||
+                    (app.aliases && app.aliases.some(alias => alias.toLowerCase().includes(searchQuery)));
+                
+                const matchesCategory = selectedCategory === 'All' || app.category === selectedCategory;
+                return matchesSearch && matchesCategory;
+            });
+
+            if (currentFilteredApps.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full flex flex-col items-center justify-center py-16 text-center">
+                        <div class="w-16 h-16 bg-[#18181b] rounded-full flex items-center justify-center mb-4 border border-[#27272a]">
+                            <svg class="w-8 h-8 text-[#52525b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-white">No apps found</h3>
+                        <p class="text-sm text-[#a1a1aa] mt-1">Try another app name or search keyword.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let htmlContent = '';
+            currentFilteredApps.forEach(app => {
+                htmlContent += `
+                    <div class="app-card p-4 cursor-pointer flex flex-col items-center text-center" onclick="goToApp('${app.slug}')">
+                        <div class="relative mb-3">
+                            <img src="${app.iconUrl || 'https://via.placeholder.com/128/18181b/ffffff?text=APP'}" 
+                                 onerror="this.src='https://via.placeholder.com/128/18181b/ffffff?text=APP'"
+                                 loading="lazy"
+                                 referrerpolicy="no-referrer"
+                                 alt="${app.name}" 
+                                 class="w-16 h-16 rounded-xl object-cover shadow-lg border border-[#27272a]">
+                            <span class="absolute -bottom-1 -right-1 bg-blue-600 text-[8px] font-bold px-1.5 py-0.5 rounded text-white">APK</span>
+                        </div>
+                        <h3 class="font-bold text-white text-sm truncate w-full">${app.name}</h3>
+                        <p class="text-[11px] text-[#a1a1aa] mt-1 line-clamp-2 h-8 leading-tight">${app.shortDescription}</p>
+                        <div class="flex items-center justify-between w-full mt-3 pt-3 border-t border-[#27272a]">
+                            <span class="text-[10px] text-[#a1a1aa] bg-[#18181b] px-2 py-0.5 rounded-full border border-[#27272a]">${app.category}</span>
+                            <span class="text-[10px] text-[#a1a1aa]">v${app.version}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            grid.innerHTML = htmlContent;
+        }
+
+        let searchTimeout;
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                searchQuery = e.target.value.toLowerCase().trim();
+                renderCatalog();
+            }, 300);
+        });
+
+        fetchPublishedApps();
+
+        document.querySelectorAll('.accordion-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const accordion = header.parentElement;
+                accordion.classList.toggle('active');
+            });
+        });
+
+        document.getElementById('feedback-form').onsubmit = (e) => {
+            e.preventDefault();
+            window.showToast('Feedback Submitted. Thank you!');
+            e.target.reset();
+        };
+    </script>
+</head>
+<body class="bg-black text-white font-sans min-h-screen flex flex-col">
+
+    <div id="initial-loader" class="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center">
+        <div class="w-12 h-12 border-4 border-[#1f1f22] border-t-blue-500 rounded-full animate-spin"></div>
+        <p class="text-[#a1a1aa] text-sm font-semibold tracking-wider mt-4 animate-pulse">Loading Store...</p>
+    </div>
+
+    <div id="qr-popup-modal" class="fixed inset-0 bg-black/95 z-[200] hidden flex-col items-center justify-center p-4">
+        <div class="w-full max-w-sm flex flex-col items-center">
+            <h3 class="text-lg font-bold text-white mb-2 text-center">Share this QR Code</h3>
+            <p class="text-xs text-[#a1a1aa] text-center mb-4">Take a screenshot of this image to share it on WhatsApp.</p>
+            
+            <img id="qr-popup-img" src="" class="w-full max-w-[280px] rounded-2xl shadow-2xl border-2 border-[#27272a] mb-6 bg-white" alt="QR Code">
+            
+            <div class="flex space-x-3 w-full max-w-[280px]">
+                <button onclick="closeQRPopup(); openShareModal(currentAppName, currentPublicUrl)" class="flex-1 bg-[#18181b] text-white px-4 py-3 rounded-xl border border-[#27272a] text-xs font-bold transition btn-press">Share Link</button>
+                <button onclick="closeQRPopup()" class="flex-1 bg-blue-600 text-white px-4 py-3 rounded-xl text-xs font-bold transition btn-press">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="share-modal" class="share-modal-overlay" onclick="if(event.target === this) closeShareModal()">
+        <div class="share-modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-sm font-bold text-white">Share App Link</h3>
+                <button onclick="closeShareModal()" class="text-[#a1a1aa] hover:text-white bg-[#18181b] p-1.5 rounded-full">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-4 gap-4 mb-4">
+                <a id="share-wa" target="_blank" class="flex flex-col items-center space-y-1 group">
+                    <div class="w-12 h-12 bg-green-500/10 rounded-full flex items-center justify-center text-green-500 group-hover:bg-green-500 group-hover:text-white transition">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+                    </div>
+                    <span class="text-[9px] text-[#a1a1aa]">WhatsApp</span>
+                </a>
+
+                <a id="share-tg" target="_blank" class="flex flex-col items-center space-y-1 group">
+                    <div class="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                    </div>
+                    <span class="text-[9px] text-[#a1a1aa]">Telegram</span>
+                </a>
+
+                <a id="share-fb" target="_blank" class="flex flex-col items-center space-y-1 group">
+                    <div class="w-12 h-12 bg-blue-600/10 rounded-full flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                    </div>
+                    <span class="text-[9px] text-[#a1a1aa]">Facebook</span>
+                </a>
+
+                <a id="share-tw" target="_blank" class="flex flex-col items-center space-y-1 group">
+                    <div class="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-white group-hover:bg-white group-hover:text-black transition">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                    </div>
+                    <span class="text-[9px] text-[#a1a1aa]">X</span>
+                </a>
+            </div>
+            
+            <button id="share-copy" class="w-full bg-[#18181b] hover:bg-[#27272a] text-white font-medium py-3 rounded-xl transition text-xs flex items-center justify-center space-x-2 border border-[#27272a] btn-press">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                <span>Copy Link</span>
+            </button>
+        </div>
+    </div>
+
+    <header class="sticky top-0 z-40 bg-black border-b border-[#1f1f22]">
+        <div class="max-w-md mx-auto px-4 h-14 flex items-center justify-between">
+            <a href="javascript:void(0)" onclick="goHome()" class="flex items-center space-x-2.5">
+                <div class="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white text-xs">PB</div>
+                <span class="font-bold text-base tracking-tight text-white">PB X Store</span>
+            </a>
+        </div>
+    </header>
+
+    <main class="flex-grow max-w-md mx-auto w-full px-4 py-6">
+
+        <div id="homepage-view" class="animate-fade-in">
+            <div class="mb-8">
+                <h1 class="text-3xl font-extrabold text-white leading-tight tracking-tight">
+                    Discover & Download<br>
+                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600">Premium Android Apps</span>
+                </h1>
+                <p class="text-[#a1a1aa] text-sm mt-3">Your trusted source for the latest APKs.</p>
+                
+                <div class="mt-5 relative">
+                    <input type="text" id="search-input" placeholder="Search apps, games, tools..." 
+                           class="w-full bg-[#09090b] border border-[#1f1f22] rounded-xl py-3.5 pl-11 pr-4 text-sm focus:outline-none focus:border-blue-500 transition text-white placeholder-[#52525b]">
+                    <svg class="w-4 h-4 text-[#52525b] absolute left-4 top-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+            </div>
+
+            <div class="mb-6">
+                <div id="category-pills" class="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide"></div>
+            </div>
+
+            <div>
+                <h2 class="text-lg font-bold text-white mb-4">Latest Apps</h2>
+                <div id="catalog-grid" class="grid grid-cols-2 gap-3"></div>
+            </div>
+        </div>
+
+        <div id="password-view" class="hidden animate-fade-in flex flex-col items-center justify-center py-20">
+            <div class="w-full max-w-sm beta-card p-8 text-center shadow-xl relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
+                
+                <div class="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-blue-500/20">
+                    <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                </div>
+                
+                <h2 id="pass-app-name" class="text-xl font-bold text-white mb-2">App is protected</h2>
+                <p class="text-xs text-[#a1a1aa] mb-6">Enter the password to continue.</p>
+                
+                <input type="password" id="app-password-input" placeholder="Password" class="w-full bg-[#000000] border border-[#27272a] rounded-xl py-3 px-4 text-sm text-center focus:outline-none focus:border-blue-500 text-white mb-2 transition">
+                <p id="pass-error" class="hidden text-red-500 text-[10px] mb-4 text-left">Incorrect password. Try again.</p>
+                
+                <button id="unlock-btn" class="w-full bg-[#1d4ed8] hover:bg-blue-600 text-white font-bold py-3.5 rounded-xl transition text-xs shadow-lg mb-4 btn-press">Unlock</button>
+
+                <button onclick="goHome()" class="text-[10px] text-[#a1a1aa] hover:text-white mt-2">← Back to Store</button>
+            </div>
+        </div>
+
+        <div id="app-details-view" class="hidden animate-fade-in">
+            
+            <div class="mb-4">
+                <button onclick="goHome()" class="flex items-center text-[#a1a1aa] hover:text-white text-xs font-medium transition bg-[#18181b] border border-[#27272a] px-3 py-2 rounded-lg btn-press">
+                    <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    Back to Store
+                </button>
+            </div>
+
+            <div class="flex justify-center mb-5">
+                <div class="inline-flex items-center space-x-2 bg-[#18181b] border border-[#27272a] rounded-full px-4 py-1.5">
+                    <span class="text-[10px] text-[#a1a1aa] font-medium tracking-wider uppercase">Powered by</span>
+                    <span class="text-[10px] text-blue-500 font-bold tracking-wider">PB X Store</span>
+                </div>
+            </div>
+
+            <div class="beta-card p-5 shadow-xl relative overflow-hidden">
+                <div class="flex items-start space-x-4 mb-5">
+                    <img id="detail-icon" src="" alt="App Icon" class="w-20 h-20 rounded-2xl object-cover shadow-md border border-[#27272a] bg-[#18181b]" referrerpolicy="no-referrer" loading="lazy">
+                    <div class="flex-1 min-w-0">
+                        <h1 id="detail-name" class="text-xl font-bold text-white leading-tight truncate">App Name</h1>
+                        
+                        <div class="flex flex-wrap items-center gap-2 mt-3">
+                            <span class="bg-blue-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-md flex items-center space-x-1">
+                                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997zm-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997zm11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396z"/></svg>
+                                <span>APK</span>
+                            </span>
+                            <span id="badge-version" class="bg-[#18181b] text-[#a1a1aa] text-[10px] font-semibold px-2.5 py-1 rounded-md border border-[#27272a]">v1.0.0</span>
+                            <span id="badge-size" class="bg-[#18181b] text-[#a1a1aa] text-[10px] font-semibold px-2.5 py-1 rounded-md border border-[#27272a]">16.86 MB</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-[#000000] border border-[#1f1f22] rounded-xl p-3.5 flex items-center space-x-3 mb-4">
+                    <svg class="w-4 h-4 text-[#a1a1aa]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span id="detail-expiry-text" class="text-xs text-[#a1a1aa] font-medium">Lifetime Access</span>
+                </div>
+
+                <a id="detail-download-btn" href="#" class="w-full bg-[#1d4ed8] text-white font-bold py-4 px-4 rounded-xl flex items-center justify-between transition shadow-lg group btn-press cursor-pointer">
+                    <div class="flex items-center space-x-3 pointer-events-none">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997zm-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997zm11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396z"/></svg>
+                        <div class="flex flex-col text-left">
+                            <span class="text-sm font-bold">Download APK</span>
+                            <span class="text-[10px] font-normal opacity-80">For Android devices</span>
+                        </div>
+                    </div>
+                    <svg class="w-5 h-5 group-hover:translate-x-1 transition pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                </a>
+            </div>
+
+            <div class="mt-6">
+                <div class="flex items-center space-x-2 mb-3 px-1">
+                    <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    <h3 class="text-sm font-bold text-white">App Overview</h3>
+                    <span class="text-[10px] text-[#52525b] font-medium uppercase tracking-wider ml-1">Quick Stats</span>
+                </div>
+                
+                <div class="space-y-3">
+                    <div class="beta-box flex items-center justify-between">
+                        <div class="flex items-center space-x-2"><svg class="w-4 h-4 text-[#52525b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg><span class="text-[10px] text-[#52525b] font-bold uppercase tracking-wider">App Name</span></div>
+                        <span id="grid-app-name" class="text-xs font-bold text-white truncate max-w-[150px]">App Name</span>
+                    </div>
+                    <div class="beta-box flex items-center justify-between">
+                        <div class="flex items-center space-x-2"><svg class="w-4 h-4 text-[#52525b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path></svg><span class="text-[10px] text-[#52525b] font-bold uppercase tracking-wider">Version</span></div>
+                        <span id="grid-version" class="text-xs font-bold text-white">v1.0.0</span>
+                    </div>
+                    <div class="beta-box flex items-center justify-between">
+                        <div class="flex items-center space-x-2"><svg class="w-4 h-4 text-[#52525b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg><span class="text-[10px] text-[#52525b] font-bold uppercase tracking-wider">Size</span></div>
+                        <span id="grid-size" class="text-xs font-bold text-white">16.86 MB</span>
+                    </div>
+                    <div class="beta-box flex items-center justify-between">
+                        <div class="flex items-center space-x-2"><svg class="w-4 h-4 text-[#52525b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="text-[10px] text-[#52525b] font-bold uppercase tracking-wider">Uploaded</span></div>
+                        <span id="grid-uploaded" class="text-xs font-bold text-white">Oct 15, 2026</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 accordion beta-card overflow-hidden">
+                <div class="accordion-header p-4 flex items-center justify-between cursor-pointer">
+                    <div class="flex items-center space-x-2">
+                        <svg class="w-4 h-4 text-[#a1a1aa]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        <div><h3 class="text-xs font-bold text-white">Technical Details</h3><p class="text-[9px] text-[#52525b]">TAP TO EXPAND</p></div>
+                    </div>
+                    <svg class="accordion-icon w-4 h-4 text-[#52525b] transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </div>
+                <div class="accordion-content px-4 pb-4">
+                    <div class="space-y-2 text-xs border-t border-[#1f1f22] pt-3">
+                        <div class="flex justify-between"><span class="text-[#52525b]">Platform</span><span id="tech-platform" class="text-white">Android</span></div>
+                        <div class="flex justify-between"><span class="text-[#52525b]">Bundle ID</span><span id="tech-bundle" class="text-white">com.example</span></div>
+                        <div class="flex justify-between"><span class="text-[#52525b]">Min Android</span><span id="tech-android" class="text-white">7.0+</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 beta-card p-5">
+                <div class="flex items-center space-x-2 mb-3">
+                    <svg class="w-4 h-4 text-[#a1a1aa]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                    <div><h3 class="text-xs font-bold text-white">Feedback</h3><p class="text-[9px] text-[#52525b]">RATE EXPERIENCE</p></div>
+                </div>
+                <form id="feedback-form">
+                    <p class="text-xs text-[#a1a1aa] text-center mb-2">Rate this build</p>
+                    <div class="flex justify-center space-x-2 mb-4 text-[#52525b]">
+                        <span class="text-2xl cursor-pointer hover:text-yellow-500 transition">★</span>
+                        <span class="text-2xl cursor-pointer hover:text-yellow-500 transition">★</span>
+                        <span class="text-2xl cursor-pointer hover:text-yellow-500 transition">★</span>
+                        <span class="text-2xl cursor-pointer hover:text-yellow-500 transition">★</span>
+                        <span class="text-2xl cursor-pointer hover:text-yellow-500 transition">★</span>
+                    </div>
+                    <label class="text-xs text-[#a1a1aa] mb-1 block">What happened?</label>
+                    <textarea rows="3" class="w-full bg-[#000000] border border-[#1f1f22] rounded-xl p-3 text-xs text-white placeholder-[#52525b] focus:outline-none focus:border-blue-500 mb-3" placeholder="Share your thoughts..."></textarea>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition text-xs shadow-lg btn-press">Submit Feedback</button>
+                </form>
+            </div>
+
+            <div class="mt-4 beta-card p-5 flex flex-col items-center">
+                <button id="btn-share-build" class="flex items-center space-x-2 mb-4 group outline-none">
+                    <svg class="w-4 h-4 text-blue-500 group-hover:text-blue-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+                    <h3 class="text-sm font-bold text-white group-hover:text-blue-400 transition">Share Build</h3>
+                </button>
+                
+                <div class="bg-white p-2.5 rounded-2xl mb-3 relative inline-block shadow-lg">
+                    <div id="qr-container" class="w-[130px] h-[130px]"></div>
+                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div class="bg-white p-1 rounded-xl shadow-sm border border-gray-200 w-[40px] h-[40px] flex items-center justify-center">
+                            <img id="qr-logo-img" src="" class="w-full h-full object-cover rounded-lg">
+                        </div>
+                    </div>
+                </div>
+                
+                <p class="text-[10px] text-[#52525b] mb-3">SCAN QR CODE</p>
+                
+                <div class="w-full bg-[#000000] border border-[#1f1f22] rounded-xl p-2 flex items-center justify-between mb-3">
+                    <span id="qr-link-text" class="text-[10px] text-[#a1a1aa] truncate mr-2">pbxstore1.site.je/?app=...</span>
+                    <button id="btn-copy-link" class="p-1.5 bg-[#18181b] hover:bg-[#27272a] rounded-lg text-[#a1a1aa] hover:text-white transition btn-press flex-shrink-0" title="Copy Link">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                    </button>
+                </div>
+
+                <button id="btn-share-qr" class="w-full bg-[#1d4ed8] hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition text-xs shadow-lg btn-press flex items-center justify-center space-x-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+                    <span>Share QR Code</span>
+                </button>
+            </div>
+            
+            <div class="mt-6 text-center pb-8">
+                <p class="text-xs text-[#52525b]">Uploaded by a third party. PB X Store delivers the file but does not vouch for this app.</p>
+            </div>
+        </div>
+
+        <div id="notfound-view" class="hidden text-center py-24 animate-fade-in">
+            <div class="w-16 h-16 bg-[#18181b] rounded-full flex items-center justify-center mx-auto mb-4 border border-[#27272a]">
+                <svg class="w-8 h-8 text-[#52525b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </div>
+            <h2 class="text-xl font-bold text-white mb-2">App Not Found</h2>
+            <p class="text-[#a1a1aa] text-xs mb-6 max-w-xs mx-auto">The application you are looking for does not exist or has been unpublished.</p>
+            <button onclick="goHome()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition btn-press">Return to Store</button>
+        </div>
+
+    </main>
+
+    <footer class="border-t border-[#1f1f22] bg-black mt-auto">
+        <div class="max-w-md mx-auto px-4 py-6 text-center">
+            <div class="flex items-center justify-center space-x-2 mb-3">
+                <div class="w-6 h-6 bg-blue-600 rounded flex items-center justify-center font-bold text-white text-[10px]">PB</div>
+                <span class="font-bold text-sm text-white">PB X Store</span>
+            </div>
+            <p class="text-[10px] text-[#52525b] mb-4">Premium APK Distribution Platform</p>
+            <div class="flex justify-center space-x-4 text-[10px] text-[#a1a1aa] mb-4">
+                <a href="#" class="hover:text-blue-400 transition">Privacy Policy</a>
+                <a href="#" class="hover:text-blue-400 transition">Terms of Use</a>
+                <a href="#" class="hover:text-blue-400 transition">Support</a>
+            </div>
+            <p class="text-[10px] text-[#52525b]">&copy; 2026 PB X Store. All rights reserved.</p>
+        </div>
+    </footer>
+
+</body>
+</html>

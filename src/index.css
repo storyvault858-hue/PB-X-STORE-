@@ -6,11 +6,11 @@
     --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
-    /* Base Light Neutrals (harmonized per theme below) */
-    --canvas: #e8f0fe;
-    --surface: #f5f9ff;
+    /* Base Light Neutrals — Titanium Default (harmonized per theme below) */
+    --canvas: #eceef2;
+    --surface: #f8f9fb;
     --surface-raised: #ffffff;
-    --surface-inset: #dce8fc;
+    --surface-inset: #dfe3ea;
     --surface-sidebar: var(--canvas);
     --border-subtle: rgba(15, 23, 42, 0.08);
     --border-strong: rgba(15, 23, 42, 0.16);
@@ -39,13 +39,13 @@
       0 1px 0 rgba(255, 255, 255, 0.88);
     --btn-secondary-lip: rgba(15, 23, 42, 0.15);
 
-    /* Default Accent: Midnight Sapphire */
-    --accent: #2563eb;
-    --accent-bright: #38bdf8;
-    --accent-lip: #1d4ed8;
-    --accent-soft: rgba(37, 99, 235, 0.14);
-    --accent-ambient: rgba(37, 99, 235, 0.16);
-    --accent-glow: rgba(37, 99, 235, 0.36);
+    /* Default Accent: Titanium Monochrome */
+    --accent: #27272a;
+    --accent-bright: #52525b;
+    --accent-lip: #09090b;
+    --accent-soft: rgba(39, 39, 42, 0.11);
+    --accent-ambient: rgba(82, 82, 91, 0.11);
+    --accent-glow: rgba(39, 39, 42, 0.28);
     --accent-text-on: #ffffff;
   }
 
@@ -398,7 +398,9 @@
   body {
     background-color: var(--canvas);
     color: var(--text-primary);
-    overflow-x: hidden;
+    overflow-x: clip;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
     transition: background-color 240ms ease, color 240ms ease;
   }
 

@@ -8,14 +8,14 @@
     "cleartext": true
   },
   "android": {
-    "backgroundColor": "#081020",
+    "backgroundColor": "#eceef2",
     "allowMixedContent": true
   },
   "plugins": {
     "StatusBar": {
       "overlaysWebView": false,
-      "style": "DARK",
-      "backgroundColor": "#081020"
+      "style": "LIGHT",
+      "backgroundColor": "#eceef2"
     }
   }
 }
