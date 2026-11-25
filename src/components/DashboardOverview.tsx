@@ -1,13 +1,11 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import {
-  ArrowUpRight,
   CheckCircle2,
   ChevronRight,
   Download,
   FileEdit,
   Layers,
-  MessageSquareText,
   Plus,
   Star,
 } from 'lucide-react';
@@ -23,7 +21,6 @@ interface DashboardOverviewProps {
   totalComments: number;
   onOpenAdd: () => void;
   onViewBuilds: () => void;
-  onViewReviews: () => void;
   onManageApp: (id: string) => void;
 }
 
@@ -35,7 +32,6 @@ export function DashboardOverview({
   totalComments,
   onOpenAdd,
   onViewBuilds,
-  onViewReviews,
   onManageApp,
 }: DashboardOverviewProps) {
   const totalBuilds = apps.length;
@@ -153,19 +149,18 @@ export function DashboardOverview({
             <p className="text-xs text-[var(--text-muted)] mt-0.5 font-mono tabular-nums">
               {totalReviews.toLocaleString()} total{' '}
               {totalReviews === 1 ? 'review' : 'reviews'} · {totalComments.toLocaleString()}{' '}
-              {totalComments === 1 ? 'comment' : 'comments'}
+              {totalComments === 1 ? 'comment' : 'comments'} across your builds
             </p>
           </div>
         </div>
 
         <button
           type="button"
-          onClick={onViewReviews}
+          onClick={onViewBuilds}
           className="btn-3d-secondary min-h-[40px] px-4 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
         >
-          <MessageSquareText className="w-3.5 h-3.5 text-[var(--accent)]" />
-          <span>Read Reviews &amp; Comments</span>
-          <ArrowUpRight className="w-3.5 h-3.5" />
+          <span>View Builds &amp; Reviews</span>
+          <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
 
@@ -215,7 +210,7 @@ export function DashboardOverview({
             className="text-xs font-semibold text-[var(--accent)] hover:underline flex items-center gap-1 whitespace-nowrap cursor-pointer min-h-[36px] px-1"
           >
             <span>View all builds</span>
-            <ArrowUpRight className="w-3.5 h-3.5" />
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 

@@ -14,7 +14,7 @@ export type ThemeId =
   | 'mocha'
   | 'lavender';
 
-export type ActiveView = 'dashboard' | 'builds' | 'reviews' | 'add' | 'manage';
+export type ActiveView = 'dashboard' | 'builds' | 'add' | 'manage';
 
 export type PlatformType = 'Android' | 'iOS';
 

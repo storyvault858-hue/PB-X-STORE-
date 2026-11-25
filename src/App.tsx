@@ -19,7 +19,6 @@ import {
   Box,
   LayoutGrid,
   LogOut,
-  MessageSquareText,
   PlusCircle,
 } from 'lucide-react';
 import {
@@ -49,7 +48,6 @@ import { DashboardOverview } from './components/DashboardOverview';
 import { LoginView } from './components/LoginView';
 import { ManageBuildView } from './components/ManageBuildView';
 import { QRModal } from './components/QRModal';
-import { ReviewsView } from './components/ReviewsView';
 import { SplashScreen } from './components/SplashScreen';
 import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { ToastContainer } from './components/ToastContainer';
@@ -176,7 +174,6 @@ export default function App() {
       }
     );
 
-    // Optional listener on top-level /reviews node (silently skipped if RTDB rules restrict /reviews)
     unsubReviews = onValue(
       ref(db, 'reviews'),
       (snapshot) => {
@@ -220,7 +217,7 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, [hasTimedApps]);
 
-  // 5. Server-Time Verified Auto-Expiry Removal (Lifetime builds are NEVER deleted)
+  // 5. Server-Time Verified Auto-Expiry Removal
   useEffect(() => {
     if (!user || apps.length === 0) return;
 
@@ -247,7 +244,6 @@ export default function App() {
     }
   }, [apps, serverNow, user, selectedAppId, showToast]);
 
-  // Aggregate ratings & user comments across all apps
   const ratingsAggregate = useMemo(
     () => buildAllRatingsMap(apps, rootReviewsTree),
     [apps, rootReviewsTree]
@@ -258,7 +254,6 @@ export default function App() {
     [apps, selectedAppId]
   );
 
-  // If currently managed app was deleted, return safely to builds list
   useEffect(() => {
     if (activeView === 'manage' && selectedAppId && !selectedApp && dataReady) {
       setSelectedAppId(null);
@@ -547,15 +542,10 @@ export default function App() {
     [showToast]
   );
 
+  // Exactly 3 main sections: Dashboard, Builds, Upload
   const navItems: { id: ActiveView; label: string; icon: typeof LayoutGrid; badge?: number }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
     { id: 'builds', label: 'Builds', icon: Box, badge: apps.length },
-    {
-      id: 'reviews',
-      label: 'Reviews',
-      icon: MessageSquareText,
-      badge: ratingsAggregate.totalReviews,
-    },
     { id: 'add', label: 'Upload', icon: PlusCircle },
   ];
 
@@ -566,13 +556,11 @@ export default function App() {
       ? 'Dashboard'
       : activeView === 'builds'
         ? 'All Builds'
-        : activeView === 'reviews'
-          ? 'Reviews'
-          : activeView === 'add'
-            ? editingApp
-              ? 'Edit Build'
-              : 'Upload Build'
-            : selectedApp?.name || 'Manage Build';
+        : activeView === 'add'
+          ? editingApp
+            ? 'Edit Build'
+            : 'Upload Build'
+          : selectedApp?.name || 'Manage Build';
 
   if (!authReady) {
     return (
@@ -701,7 +689,7 @@ export default function App() {
           </div>
         </aside>
 
-        {/* Mobile Sticky Top Header — Solid canvas background so scrolled cards never bleed behind it */}
+        {/* Mobile Sticky Top Header */}
         <header
           className="lg:hidden sticky top-0 z-40 border-b border-[var(--border-subtle)] transition-colors duration-200"
           style={{
@@ -736,7 +724,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* Main Scrollable Content Viewport — generous bottom clearance guarantees bottom cards NEVER get trapped behind bottom nav */}
+        {/* Main Scrollable Content Viewport */}
         <main className="flex-1 w-full lg:pl-72">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-44 sm:pb-40 lg:pb-12">
             {activeView === 'dashboard' && (
@@ -748,7 +736,6 @@ export default function App() {
                 totalComments={ratingsAggregate.totalComments}
                 onOpenAdd={handleOpenAdd}
                 onViewBuilds={() => navigateTo('builds')}
-                onViewReviews={() => navigateTo('reviews')}
                 onManageApp={handleManageApp}
               />
             )}
@@ -762,20 +749,6 @@ export default function App() {
                 onManageApp={handleManageApp}
                 onCopyLink={handleCopyLink}
                 onShowQR={(item) => setQrApp(item)}
-              />
-            )}
-
-            {activeView === 'reviews' && (
-              <ReviewsView
-                apps={apps}
-                ratingsByAppId={ratingsAggregate.byAppId}
-                allReviews={ratingsAggregate.allReviews}
-                overallAverage={ratingsAggregate.overallAverage}
-                totalReviews={ratingsAggregate.totalReviews}
-                totalComments={ratingsAggregate.totalComments}
-                ratedAppsCount={ratingsAggregate.ratedAppsCount}
-                onManageApp={handleManageApp}
-                onDeleteReview={handleDeleteReview}
               />
             )}
 
@@ -817,12 +790,11 @@ export default function App() {
               />
             )}
 
-            {/* Extra mobile scroll spacer so bottom-most card is always 100% visible above bottom tab bar */}
             <div aria-hidden="true" className="h-10 lg:hidden" />
           </div>
         </main>
 
-        {/* Mobile Bottom Tab Bar — 4 clean tabs: Dashboard | Builds | Reviews | Upload */}
+        {/* Mobile Bottom Tab Bar — Exactly 3 tabs: Dashboard | Builds | Upload */}
         <nav
           aria-label="Mobile navigation"
           className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[var(--border-subtle)] transition-colors duration-200"
@@ -832,7 +804,7 @@ export default function App() {
             boxShadow: '0 -8px 24px -10px rgba(0, 0, 0, 0.14)',
           }}
         >
-          <div className="grid grid-cols-4 items-center px-1.5 py-1.5">
+          <div className="grid grid-cols-3 items-center px-2 py-1.5">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = activeNavId === item.id;
