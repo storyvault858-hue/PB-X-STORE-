@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import QRCode from 'qrcode';
+import { ref, set } from 'firebase/database';
 import {
   ArrowLeft,
   ArrowRight,
@@ -23,15 +24,17 @@ import {
   ShieldCheck,
   Smartphone,
   Star,
+  User,
 } from 'lucide-react';
 import type { StoreApp } from '../../types';
-import { ref, set } from 'firebase/database';
 import { db, formatShortDate, getAppStoreUrl, getExpiryStatus } from '../../lib/firebase';
+import { buildAppRatingSummary, formatReviewDate } from '../../lib/reviews';
 import { AppIcon } from '../AppIcon';
 import { StoreQRPreviewModal, StoreShareModal } from './StoreShareModal';
 
 interface SavedFeedback {
   id?: string;
+  author?: string;
   rating: number;
   comment: string;
   submittedAt: string;
@@ -62,7 +65,7 @@ export function StoreAppDetailView({
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
 
-  // Fully working 5-star interactive rating & feedback state (persisted per app)
+  // Fully working 5-star interactive rating & feedback state (persisted locally + Firebase RTDB)
   const storageKey = `pbx_feedback_${app.id}`;
   const [savedFeedback, setSavedFeedback] = useState<SavedFeedback | null>(() => {
     try {
@@ -72,6 +75,7 @@ export function StoreAppDetailView({
       return null;
     }
   });
+  const [authorName, setAuthorName] = useState<string>(() => savedFeedback?.author || '');
   const [rating, setRating] = useState<number>(() => savedFeedback?.rating || 0);
   const [hoverRating, setHoverRating] = useState<number>(0);
   const [comment, setComment] = useState<string>(() => savedFeedback?.comment || '');
@@ -85,11 +89,13 @@ export function StoreAppDetailView({
       const raw = localStorage.getItem(`pbx_feedback_${app.id}`);
       const parsed = raw ? (JSON.parse(raw) as SavedFeedback) : null;
       setSavedFeedback(parsed);
+      setAuthorName(parsed?.author || '');
       setRating(parsed?.rating || 0);
       setComment(parsed?.comment || '');
       setEditingFeedback(!parsed);
     } catch {
       setSavedFeedback(null);
+      setAuthorName('');
       setRating(0);
       setComment('');
       setEditingFeedback(true);
@@ -99,6 +105,8 @@ export function StoreAppDetailView({
   const publicUrl = useMemo(() => getAppStoreUrl(app), [app]);
   const isIOS = (app.platform || 'Android').toLowerCase() === 'ios';
   const pkgType = isIOS ? 'IPA' : 'APK';
+
+  const ratingSummary = useMemo(() => buildAppRatingSummary(app), [app]);
 
   const expiry = getExpiryStatus(
     app.expiryDate,
@@ -115,7 +123,7 @@ export function StoreAppDetailView({
         ? 'text-amber-600 dark:text-amber-400'
         : 'text-emerald-600 dark:text-emerald-400';
 
-  // Generate crisp high-res Level H QR Code (identical pattern to Admin Control Center)
+  // Generate crisp high-res Level H QR Code
   useEffect(() => {
     let active = true;
     const canvas = qrCanvasRef.current;
@@ -151,7 +159,6 @@ export function StoreAppDetailView({
           try {
             setQrDataUrl(exportCanvas.toDataURL('image/png'));
           } catch {
-            // Fallback to pure QR canvas if cross-origin icon taints export canvas
             try {
               setQrDataUrl(canvas.toDataURL('image/png'));
             } catch {
@@ -265,8 +272,11 @@ export function StoreAppDetailView({
       savedFeedback?.id ||
       `rev_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+    const cleanAuthor = authorName.trim() || 'Store User';
+
     const entry: SavedFeedback = {
       id: reviewId,
+      author: cleanAuthor,
       rating,
       comment: comment.trim(),
       submittedAt: new Date(serverNow).toISOString(),
@@ -283,7 +293,7 @@ export function StoreAppDetailView({
       id: reviewId,
       rating: entry.rating,
       comment: entry.comment,
-      author: 'Store User',
+      author: cleanAuthor,
       version: app.version || '1.0.0',
       createdAt: entry.submittedAt,
     }).catch(() => {
@@ -341,14 +351,8 @@ export function StoreAppDetailView({
             <span>Back to Store</span>
           </button>
 
-          <div
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--border-subtle)] text-[11px] font-semibold text-[var(--text-secondary)]"
-            style={{
-              background: 'var(--surface-inset)',
-              boxShadow: 'var(--shadow-inset)',
-            }}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-[var(--accent)]" />
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--text-secondary)]">
+            <ShieldCheck className="w-4 h-4 text-[var(--accent)]" />
             <span>Verified by PB X Store</span>
           </div>
         </div>
@@ -373,7 +377,7 @@ export function StoreAppDetailView({
                   {app.name}
                 </h1>
                 {app.password && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[var(--accent)] bg-[var(--accent-soft)] px-2 py-0.5 rounded-lg">
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--accent)]">
                     <Lock className="w-3 h-3" />
                     Unlocked
                   </span>
@@ -386,36 +390,34 @@ export function StoreAppDetailView({
                 </p>
               )}
 
-              <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                <span
-                  className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-lg inline-flex items-center gap-1"
-                  style={{
-                    background: 'var(--accent)',
-                    color: 'var(--accent-text-on)',
-                  }}
-                >
-                  <Smartphone className="w-3 h-3" />
+              {/* Clean Unboxed Metadata Row */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2 text-xs text-[var(--text-secondary)]">
+                <span className="inline-flex items-center gap-1 font-bold text-[var(--text-primary)]">
+                  <Smartphone className="w-3.5 h-3.5 text-[var(--accent)]" />
                   <span>{pkgType}</span>
                 </span>
-                <span
-                  className="font-mono text-[11px] font-semibold px-2.5 py-0.5 rounded-lg border border-[var(--border-subtle)] text-[var(--text-primary)]"
-                  style={{ background: 'var(--surface-inset)' }}
-                >
+                <span aria-hidden="true">·</span>
+                <span className="font-mono font-semibold text-[var(--text-primary)] tabular-nums">
                   v{app.version}
                 </span>
-                <span
-                  className="font-mono text-[11px] font-semibold px-2.5 py-0.5 rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)]"
-                  style={{ background: 'var(--surface-inset)' }}
-                >
-                  {app.fileSize || 'Size N/A'}
-                </span>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums">{app.fileSize || 'Size N/A'}</span>
                 {app.category && app.category.trim().length > 0 && (
-                  <span
-                    className="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)]"
-                    style={{ background: 'var(--surface-inset)' }}
-                  >
-                    {app.category}
-                  </span>
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>{app.category}</span>
+                  </>
+                )}
+                {ratingSummary.totalReviews > 0 && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="inline-flex items-center gap-1 font-mono font-semibold text-[var(--text-primary)] tabular-nums">
+                      <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                      <span>
+                        {ratingSummary.averageRating.toFixed(1)} ({ratingSummary.totalReviews})
+                      </span>
+                    </span>
+                  </>
                 )}
               </div>
             </div>
@@ -475,7 +477,7 @@ export function StoreAppDetailView({
             <button
               type="button"
               onClick={() => setShareOpen(true)}
-              className="btn-3d-secondary min-h-[38px] px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+              className="btn-3d-secondary min-h-[40px] px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Share2 className="w-3.5 h-3.5 text-[var(--accent)]" />
               <span>Share</span>
@@ -483,7 +485,7 @@ export function StoreAppDetailView({
             <button
               type="button"
               onClick={() => onCopyLink(publicUrl)}
-              className="btn-3d-secondary min-h-[38px] px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+              className="btn-3d-secondary min-h-[40px] px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Copy className="w-3.5 h-3.5 text-[var(--accent)]" />
               <span>Copy Link</span>
@@ -491,7 +493,7 @@ export function StoreAppDetailView({
             <button
               type="button"
               onClick={handleShareQr}
-              className="btn-3d-secondary min-h-[38px] px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+              className="btn-3d-secondary min-h-[40px] px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <QrCodeIcon className="w-3.5 h-3.5 text-[var(--accent)]" />
               <span>QR Code</span>
@@ -541,7 +543,7 @@ export function StoreAppDetailView({
                     boxShadow: 'var(--shadow-inset)',
                   }}
                 >
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--text-muted)]">
                     <Icon className="w-3 h-3" />
                     <span>{item.label}</span>
                   </div>
@@ -618,7 +620,7 @@ export function StoreAppDetailView({
           )}
         </section>
 
-        {/* Fully Working 5-Star Rating & Feedback Card */}
+        {/* Fully Working 5-Star Rating & Feedback Card + Live Community Reviews */}
         <section className="surface-3d rounded-3xl p-4 sm:p-5 space-y-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5">
@@ -626,9 +628,13 @@ export function StoreAppDetailView({
                 <MessageSquare className="w-4 h-4" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-[var(--text-primary)]">Rate &amp; Feedback</h2>
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  Share your experience with this build
+                <h2 className="text-sm font-bold text-[var(--text-primary)]">
+                  Ratings &amp; Reviews
+                </h2>
+                <p className="text-[11px] text-[var(--text-muted)] font-mono tabular-nums">
+                  {ratingSummary.totalReviews > 0
+                    ? `${ratingSummary.averageRating.toFixed(1)} / 5.0 · ${ratingSummary.totalReviews} ${ratingSummary.totalReviews === 1 ? 'review' : 'reviews'}`
+                    : 'Share your experience with this build'}
                 </p>
               </div>
             </div>
@@ -636,7 +642,7 @@ export function StoreAppDetailView({
               <button
                 type="button"
                 onClick={() => setEditingFeedback(true)}
-                className="btn-3d-secondary min-h-[32px] px-3 rounded-xl text-xs font-semibold cursor-pointer"
+                className="btn-3d-secondary min-h-[34px] px-3 rounded-xl text-xs font-semibold cursor-pointer"
               >
                 Edit
               </button>
@@ -651,14 +657,14 @@ export function StoreAppDetailView({
                 boxShadow: 'var(--shadow-inset)',
               }}
             >
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-1">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <Star
                       key={star}
                       className={`w-4 h-4 ${
                         star <= savedFeedback.rating
-                          ? 'text-amber-400 fill-amber-400'
+                          ? 'text-amber-500 fill-amber-500'
                           : 'text-[var(--text-muted)] opacity-35'
                       }`}
                     />
@@ -700,7 +706,7 @@ export function StoreAppDetailView({
                         <Star
                           className={`w-6 h-6 transition-colors ${
                             filled
-                              ? 'text-amber-400 fill-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.45)]'
+                              ? 'text-amber-500 fill-amber-500 drop-shadow-[0_0_6px_rgba(245,158,11,0.35)]'
                               : 'text-[var(--text-muted)] opacity-45'
                           }`}
                         />
@@ -713,6 +719,24 @@ export function StoreAppDetailView({
                     ? `${RATING_LABELS[activeStars]} · ${activeStars} / 5`
                     : 'Tap a star to rate'}
                 </p>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="store-feedback-name"
+                  className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5"
+                >
+                  Your name (optional)
+                </label>
+                <input
+                  id="store-feedback-name"
+                  type="text"
+                  maxLength={40}
+                  value={authorName}
+                  onChange={(e) => setAuthorName(e.target.value)}
+                  placeholder="e.g. Aman"
+                  className="input-3d min-h-[42px]"
+                />
               </div>
 
               <div>
@@ -737,6 +761,7 @@ export function StoreAppDetailView({
                   <button
                     type="button"
                     onClick={() => {
+                      setAuthorName(savedFeedback.author || '');
                       setRating(savedFeedback.rating);
                       setComment(savedFeedback.comment);
                       setEditingFeedback(false);
@@ -754,6 +779,56 @@ export function StoreAppDetailView({
                 </button>
               </div>
             </form>
+          )}
+
+          {/* Recent User Reviews List (when reviews exist in Firebase) */}
+          {ratingSummary.reviews.length > 0 && (
+            <div className="pt-3 border-t border-[var(--border-subtle)] space-y-2.5">
+              <p className="text-xs font-bold text-[var(--text-primary)]">
+                Recent Reviews ({ratingSummary.reviews.length})
+              </p>
+              <div className="space-y-2.5">
+                {ratingSummary.reviews.slice(0, 6).map((rev) => (
+                  <div
+                    key={rev.id}
+                    className="rounded-2xl p-3.5 border border-[var(--border-subtle)] space-y-1.5"
+                    style={{
+                      background: 'var(--surface-inset)',
+                      boxShadow: 'var(--shadow-inset)',
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <User className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+                        <span className="text-xs font-bold text-[var(--text-primary)] truncate">
+                          {rev.author}
+                        </span>
+                        <span className="text-[11px] font-mono text-[var(--text-muted)] tabular-nums shrink-0">
+                          · {formatReviewDate(rev.createdAt)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Star
+                            key={s}
+                            className={`w-3 h-3 ${
+                              s <= rev.rating
+                                ? 'text-amber-500 fill-amber-500'
+                                : 'text-[var(--text-muted)] opacity-25'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    {rev.comment && (
+                      <p className="text-xs text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap break-words">
+                        {rev.comment}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </section>
 
@@ -825,7 +900,7 @@ export function StoreAppDetailView({
           </div>
         </section>
 
-        <p className="text-[11px] text-center text-[var(--text-muted)] px-2 pb-2 leading-relaxed">
+        <p className="text-[11px] text-center text-[var(--text-muted)] px-2 pb-4 leading-relaxed">
           Uploaded by an authorized publisher. PB X Store delivers verified packages directly.
         </p>
       </motion.div>

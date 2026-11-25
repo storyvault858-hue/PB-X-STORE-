@@ -1,93 +1,60 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-  type User,
-} from 'firebase/auth';
-import {
+  equalTo,
   onValue,
-  push,
+  orderByChild,
+  query,
   ref,
-  remove,
-  set,
-  update,
+  runTransaction,
   type Unsubscribe,
 } from 'firebase/database';
-import {
-  Box,
-  LayoutGrid,
-  LogOut,
-  PlusCircle,
-} from 'lucide-react';
-import {
-  auth,
-  buildExpiryTimestamp,
-  copyToClipboard,
-  db,
-  isAppExpired,
-  LIVE_SITE_URL,
-  slugifyText,
-  translateAuthError,
-} from './lib/firebase';
-import { buildAllRatingsMap } from './lib/reviews';
-import type {
-  ActiveView,
-  AppFormValues,
-  AppReview,
-  ConfirmDialogState,
-  StoreApp,
-  ToastItem,
-} from './types';
+import { ArrowLeft, PackageX, RefreshCw } from 'lucide-react';
+import { copyToClipboard, db, isAppExpired } from './lib/firebase';
+import type { StoreApp, ToastItem } from './types';
 import { BrandEmblem3D } from './components/BrandEmblem3D';
-import { BuildFormView } from './components/BuildFormView';
-import { BuildsListView } from './components/BuildsListView';
-import { ConfirmModal } from './components/ConfirmModal';
-import { DashboardOverview } from './components/DashboardOverview';
-import { LoginView } from './components/LoginView';
-import { ManageBuildView } from './components/ManageBuildView';
-import { QRModal } from './components/QRModal';
 import { SplashScreen } from './components/SplashScreen';
 import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { ToastContainer } from './components/ToastContainer';
 import { useTheme } from './context/ThemeContext';
+import { StoreHomeView, type StorePlatformFilter } from './components/store/StoreHomeView';
+import { StoreAppDetailView } from './components/store/StoreAppDetailView';
+import { StorePasswordGate } from './components/store/StorePasswordGate';
+import { StoreLegalModal, type LegalDocType } from './components/store/StoreLegalModal';
 
-const EMPTY_RATING_SUMMARY = {
-  averageRating: 0,
-  totalReviews: 0,
-  commentCount: 0,
-  distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
-  reviews: [] as AppReview[],
-};
+function readAppSlugFromUrl(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get('app');
+    return slug && slug.trim().length > 0 ? slug.trim() : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function App() {
   const { playSound } = useTheme();
 
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-  const [dataReady, setDataReady] = useState(false);
-
-  const [apps, setApps] = useState<StoreApp[]>([]);
-  const [rootReviewsTree, setRootReviewsTree] = useState<Record<string, unknown> | null>(null);
-
-  // True Firebase server time (immune to wrong phone/PC clocks)
+  // True Firebase server time (immune to wrong device clocks)
   const [serverTimeOffset, setServerTimeOffset] = useState(0);
   const [clockTick, setClockTick] = useState(() => Date.now());
 
-  const [activeView, setActiveView] = useState<ActiveView>('dashboard');
-  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
-  const [editingApp, setEditingApp] = useState<StoreApp | null>(null);
+  const [rawApps, setRawApps] = useState<StoreApp[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState('');
+  const [syncKey, setSyncKey] = useState(0);
 
-  const [savingBuild, setSavingBuild] = useState(false);
-  const [togglingPublish, setTogglingPublish] = useState(false);
-  const [updatingValidity, setUpdatingValidity] = useState(false);
+  const [activeSlug, setActiveSlug] = useState<string | null>(() => readAppSlugFromUrl());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedPlatform, setSelectedPlatform] = useState<StorePlatformFilter>('All');
 
-  const [qrApp, setQrApp] = useState<StoreApp | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [unlockedMap, setUnlockedMap] = useState<Record<string, boolean>>({});
+  const [legalDoc, setLegalDoc] = useState<LegalDocType>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const deletingExpiredIdsRef = useRef<Set<string>>(new Set());
+  const trackedOpenIdsRef = useRef<Set<string>>(new Set());
+
   const serverNow = clockTick + serverTimeOffset;
 
   const showToast = useCallback(
@@ -107,24 +74,7 @@ export default function App() {
     setToasts((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
-  // 1. Firebase Auth listener
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthReady(true);
-      if (!currentUser) {
-        setApps([]);
-        setRootReviewsTree(null);
-        setDataReady(false);
-        setSelectedAppId(null);
-        setEditingApp(null);
-        setActiveView('dashboard');
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  // 2. Sync real Firebase Server Time offset
+  // 1. Sync real Firebase Server Time offset
   useEffect(() => {
     const unsubOffset = onValue(ref(db, '.info/serverTimeOffset'), (snap) => {
       const offset = Number(snap.val() || 0);
@@ -134,14 +84,19 @@ export default function App() {
     return () => unsubOffset();
   }, []);
 
-  // 3. Real-time Firebase RTDB subscription for Apps + optional root Reviews node
+  // 2. Real-time subscription to published apps in PB X Store Firebase RTDB
   useEffect(() => {
-    if (!user) return;
-    let unsubApps: Unsubscribe | null = null;
-    let unsubReviews: Unsubscribe | null = null;
+    let unsub: Unsubscribe | null = null;
+    setSyncError('');
 
-    unsubApps = onValue(
+    const publishedQuery = query(
       ref(db, 'apps'),
+      orderByChild('published'),
+      equalTo(true)
+    );
+
+    unsub = onValue(
+      publishedQuery,
       (snapshot) => {
         const list: StoreApp[] = [];
         snapshot.forEach((itemSnap) => {
@@ -165,40 +120,32 @@ export default function App() {
           return timeB - timeA;
         });
 
-        setApps(list);
-        setDataReady(true);
+        setRawApps(list);
+        setLoading(false);
       },
       (error) => {
-        setDataReady(true);
-        showToast(error.message || 'Unable to sync PB X Store database.', 'error');
-      }
-    );
-
-    unsubReviews = onValue(
-      ref(db, 'reviews'),
-      (snapshot) => {
-        const val = snapshot.val();
-        if (val && typeof val === 'object') {
-          setRootReviewsTree(val as Record<string, unknown>);
-        } else {
-          setRootReviewsTree(null);
-        }
-      },
-      () => {
-        setRootReviewsTree(null);
+        setSyncError(error.message || 'Unable to load store catalog.');
+        setLoading(false);
+        showToast('Could not connect to PB X Store catalog.', 'error');
       }
     );
 
     return () => {
-      if (unsubApps) unsubApps();
-      if (unsubReviews) unsubReviews();
+      if (unsub) unsub();
     };
-  }, [user, showToast]);
+  }, [syncKey, showToast]);
 
-  // 4. Smart 1-second ticker when any timed app is active
+  // 3. Strictly filter out expired builds using real Firebase server time
+  //    (Lifetime apps NEVER expire; timed apps vanish cleanly at exact 00s)
+  const activeApps = useMemo(
+    () => rawApps.filter((app) => !isAppExpired(app, serverNow)),
+    [rawApps, serverNow]
+  );
+
+  // Smart 1-second ticker when any app has an expiry countdown so seconds tick live
   const hasTimedApps = useMemo(
     () =>
-      apps.some(
+      activeApps.some(
         (item) =>
           item.isLifetime !== true &&
           Boolean(
@@ -206,7 +153,7 @@ export default function App() {
               (item.expiryDate && String(item.expiryDate).trim().length > 0)
           )
       ),
-    [apps]
+    [activeApps]
   );
 
   useEffect(() => {
@@ -217,104 +164,139 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, [hasTimedApps]);
 
-  // 5. Server-Time Verified Auto-Expiry Removal
+  // 4. URL deep-link routing (?app=<slug>) + Browser Back/Forward support
   useEffect(() => {
-    if (!user || apps.length === 0) return;
+    const onPopState = () => {
+      setActiveSlug(readAppSlugFromUrl());
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
-    const expiredApps = apps.filter(
-      (item) =>
-        isAppExpired(item, serverNow) && !deletingExpiredIdsRef.current.has(item.id)
-    );
-
-    if (expiredApps.length === 0) return;
-
-    for (const item of expiredApps) {
-      deletingExpiredIdsRef.current.add(item.id);
-      void remove(ref(db, `apps/${item.id}`))
-        .then(() => {
-          showToast(`"${item.name}" expired and was automatically removed.`, 'info');
-          if (selectedAppId === item.id) {
-            setSelectedAppId(null);
-            setActiveView('builds');
-          }
-        })
-        .catch(() => {
-          deletingExpiredIdsRef.current.delete(item.id);
-        });
-    }
-  }, [apps, serverNow, user, selectedAppId, showToast]);
-
-  const ratingsAggregate = useMemo(
-    () => buildAllRatingsMap(apps, rootReviewsTree),
-    [apps, rootReviewsTree]
-  );
-
-  const selectedApp = useMemo(
-    () => (selectedAppId ? apps.find((a) => a.id === selectedAppId) || null : null),
-    [apps, selectedAppId]
-  );
-
-  useEffect(() => {
-    if (activeView === 'manage' && selectedAppId && !selectedApp && dataReady) {
-      setSelectedAppId(null);
-      setActiveView('builds');
-    }
-  }, [activeView, selectedAppId, selectedApp, dataReady]);
-
-  const navigateTo = useCallback((view: ActiveView) => {
-    setActiveView(view);
-    if (view !== 'add') {
-      setEditingApp(null);
+  const openAppBySlug = useCallback((slug: string) => {
+    setActiveSlug(slug);
+    try {
+      const nextUrl = `${window.location.pathname}?app=${encodeURIComponent(slug)}`;
+      window.history.pushState({ app: slug }, '', nextUrl);
+    } catch {
+      // Ignore history restrictions in sandboxed frames
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  const handleLogin = useCallback(
-    async (email: string, password: string, remember: boolean) => {
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-        try {
-          if (remember) {
-            localStorage.setItem('pbx_saved_email', email);
-          } else {
-            localStorage.removeItem('pbx_saved_email');
-          }
-        } catch {
-          // Ignore storage errors
-        }
-        playSound('success');
-      } catch (err: unknown) {
-        const firebaseErr = err as { code?: string; message?: string };
-        playSound('error');
-        throw new Error(translateAuthError(firebaseErr?.code, firebaseErr?.message));
-      }
-    },
-    [playSound]
+  const goHome = useCallback(() => {
+    setActiveSlug(null);
+    try {
+      window.history.pushState({}, '', window.location.pathname);
+    } catch {
+      // Ignore history restrictions
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const activeApp = useMemo(
+    () => (activeSlug ? activeApps.find((a) => a.slug === activeSlug) || null : null),
+    [activeApps, activeSlug]
   );
 
-  const handleSignOut = useCallback(() => {
-    setConfirmDialog({
-      open: true,
-      title: 'Sign Out',
-      message: 'Sign out of PB X Store Admin Control Center?',
-      confirmLabel: 'Sign Out',
-      danger: true,
-      onConfirm: async () => {
-        try {
-          await signOut(auth);
-          showToast('Signed out successfully.', 'info');
-        } catch {
-          showToast('Unable to sign out right now.', 'error');
-        }
-      },
+  // Sync page title dynamically
+  useEffect(() => {
+    if (activeApp) {
+      document.title = `${activeApp.name} — PB X Store`;
+    } else {
+      document.title = 'PB X Store — Official App Distribution';
+    }
+  }, [activeApp]);
+
+  // Check if password-protected app is unlocked in state or sessionStorage
+  const isAppUnlocked = useCallback(
+    (app: StoreApp) => {
+      if (!app.password) return true;
+      if (unlockedMap[app.id]) return true;
+      try {
+        return sessionStorage.getItem(`unlocked_${app.id}`) === 'true';
+      } catch {
+        return false;
+      }
+    },
+    [unlockedMap]
+  );
+
+  const handleUnlockApp = useCallback(
+    (app: StoreApp) => {
+      try {
+        sessionStorage.setItem(`unlocked_${app.id}`, 'true');
+      } catch {
+        // Ignore session storage errors
+      }
+      setUnlockedMap((prev) => ({ ...prev, [app.id]: true }));
+      showToast(`${app.name} unlocked.`, 'success');
+    },
+    [showToast]
+  );
+
+  // Safe non-blocking live stat increment for Link Opens & Unique Devices
+  useEffect(() => {
+    if (!activeApp || !activeApp.id || !isAppUnlocked(activeApp)) return;
+    if (trackedOpenIdsRef.current.has(activeApp.id)) return;
+    trackedOpenIdsRef.current.add(activeApp.id);
+
+    const deviceKey = `pbx_seen_device_${activeApp.id}`;
+    let isNewDevice = false;
+    try {
+      if (!localStorage.getItem(deviceKey)) {
+        isNewDevice = true;
+        localStorage.setItem(deviceKey, '1');
+      }
+    } catch {
+      // Ignore storage errors
+    }
+
+    // Attempt clean Firebase transaction (silently ignored if public RTDB writes are locked)
+    void runTransaction(ref(db, `apps/${activeApp.id}`), (current) => {
+      if (!current || typeof current !== 'object') return current;
+      const nextOpens = (Number(current.linkOpens) || 0) + 1;
+      const downloads = Number(current.downloads) || 0;
+      const nextDevices = (Number(current.uniqueDevices) || 0) + (isNewDevice ? 1 : 0);
+      const rate = nextOpens > 0 ? Math.min(100, Math.round((downloads / nextOpens) * 100)) : 0;
+      return {
+        ...current,
+        linkOpens: nextOpens,
+        uniqueDevices: nextDevices,
+        successRate: `${rate}%`,
+      };
+    }).catch(() => {
+      // RTDB security rules may allow admin-only writes — fail silently
     });
-  }, [showToast]);
+  }, [activeApp, isAppUnlocked]);
+
+  const handleDownloadApp = useCallback(
+    (app: StoreApp) => {
+      showToast(`Downloading ${app.name}...`, 'success');
+
+      void runTransaction(ref(db, `apps/${app.id}`), (current) => {
+        if (!current || typeof current !== 'object') return current;
+        const opens = Math.max(1, Number(current.linkOpens) || 1);
+        const nextDownloads = (Number(current.downloads) || 0) + 1;
+        const rate = Math.min(100, Math.round((nextDownloads / opens) * 100));
+        return {
+          ...current,
+          downloads: nextDownloads,
+          successRate: `${rate}%`,
+        };
+      }).catch(() => {
+        // Silently ignore if public writes are restricted
+      });
+    },
+    [showToast]
+  );
 
   const handleCopyLink = useCallback(
     async (url: string) => {
       const ok = await copyToClipboard(url);
       if (ok) {
-        showToast('Copied to clipboard.', 'success');
+        showToast('Store link copied to clipboard.', 'success');
       } else {
         showToast('Could not copy automatically. Please copy manually.', 'error');
       }
@@ -322,518 +304,187 @@ export default function App() {
     [showToast]
   );
 
-  const handleOpenAdd = useCallback(() => {
-    setEditingApp(null);
-    setActiveView('add');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
-
-  const handleManageApp = useCallback((id: string) => {
-    setSelectedAppId(id);
-    setEditingApp(null);
-    setActiveView('manage');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
-
-  const handleEditApp = useCallback((app: StoreApp) => {
-    setEditingApp(app);
-    setActiveView('add');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
-
-  const handleSubmitBuild = useCallback(
-    async (values: AppFormValues, editingId: string | null) => {
-      const cleanName = values.name.trim();
-      const cleanSlug = slugifyText(values.slug || values.name);
-      const cleanVersion = values.version.trim();
-      const cleanApkUrl = values.apkUrl.trim();
-
-      if (!cleanName || !cleanSlug || !cleanVersion || !cleanApkUrl) {
-        showToast('Please fill in App Name, Slug, Version, and Download URL.', 'error');
-        return;
-      }
-
-      const isLifetime = values.expiryMode === 'lifetime';
-      let expiryDate: string | null = null;
-      let expiryTime: string | null = null;
-      let expiryTimestamp: number | null = null;
-
-      if (!isLifetime) {
-        expiryDate = values.expiryDate.trim() || null;
-        expiryTime = values.expiryTime.trim() || '23:59';
-        expiryTimestamp = buildExpiryTimestamp(expiryDate, expiryTime);
-        if (!expiryDate || !expiryTimestamp) {
-          showToast('Please choose a valid expiry date and time.', 'error');
-          return;
-        }
-        if (expiryTimestamp <= serverNow) {
-          showToast('Expiry date & time must be in the future.', 'error');
-          return;
-        }
-      }
-
-      const duplicate = apps.find(
-        (item) => item.slug.toLowerCase() === cleanSlug.toLowerCase() && item.id !== editingId
-      );
-      if (duplicate) {
-        showToast(`Slug "${cleanSlug}" is already used by "${duplicate.name}".`, 'error');
-        return;
-      }
-
-      setSavingBuild(true);
-      try {
-        const nowIso = new Date(serverNow).toISOString();
-        const aliasesArray = values.aliases
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-
-        const basePayload = {
-          name: cleanName,
-          slug: cleanSlug,
-          appUrl: `${LIVE_SITE_URL}/?app=${encodeURIComponent(cleanSlug)}`,
-          platform: values.platform,
-          bundleId: values.bundleId.trim() || 'com.pbxstore.app',
-          isLifetime,
-          expiryDate,
-          expiryTime,
-          expiryTimestamp,
-          iconUrl: values.iconUrl.trim(),
-          shortDescription: values.shortDescription.trim(),
-          category: values.category.trim(),
-          fullDescription: values.fullDescription.trim(),
-          version: cleanVersion,
-          fileSize: values.fileSize.trim(),
-          androidMinVersion: values.androidMinVersion.trim() || 'Varies',
-          apkUrl: cleanApkUrl,
-          password: values.password.trim() || null,
-          aliases: aliasesArray,
-          published: values.published,
-          updatedAt: nowIso,
-        };
-
-        if (editingId) {
-          await update(ref(db, `apps/${editingId}`), basePayload);
-          showToast(`"${cleanName}" updated successfully.`, 'success');
-          setEditingApp(null);
-          setSelectedAppId(editingId);
-          setActiveView('manage');
-        } else {
-          const newRef = push(ref(db, 'apps'));
-          await set(newRef, {
-            ...basePayload,
-            createdAt: nowIso,
-            downloads: 0,
-            linkOpens: 0,
-            uniqueDevices: 0,
-            successRate: '0%',
-          });
-          showToast(`"${cleanName}" published to PB X Store!`, 'success');
-          setSelectedAppId(newRef.key);
-          setActiveView('manage');
-        }
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to save application.';
-        showToast(msg, 'error');
-      } finally {
-        setSavingBuild(false);
-      }
-    },
-    [apps, serverNow, showToast]
-  );
-
-  const handleTogglePublish = useCallback(
-    async (app: StoreApp) => {
-      setTogglingPublish(true);
-      try {
-        const nextPublished = !app.published;
-        await update(ref(db, `apps/${app.id}`), {
-          published: nextPublished,
-          updatedAt: new Date(serverNow).toISOString(),
-        });
-        showToast(
-          nextPublished
-            ? `"${app.name}" is now Live on PB X Store.`
-            : `"${app.name}" moved to Draft.`,
-          'success'
-        );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unable to update status.';
-        showToast(msg, 'error');
-      } finally {
-        setTogglingPublish(false);
-      }
-    },
-    [serverNow, showToast]
-  );
-
-  const handleMakeLifetime = useCallback(
-    async (app: StoreApp) => {
-      setUpdatingValidity(true);
-      try {
-        await update(ref(db, `apps/${app.id}`), {
-          isLifetime: true,
-          expiryDate: null,
-          expiryTime: null,
-          expiryTimestamp: null,
-          updatedAt: new Date(serverNow).toISOString(),
-        });
-        showToast(`"${app.name}" is now set to Lifetime Access.`, 'success');
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unable to update validity.';
-        showToast(msg, 'error');
-      } finally {
-        setUpdatingValidity(false);
-      }
-    },
-    [serverNow, showToast]
-  );
-
-  const handleDeleteApp = useCallback(
-    (app: StoreApp) => {
-      setConfirmDialog({
-        open: true,
-        title: 'Delete Application',
-        message: `Permanently delete "${app.name}" (v${app.version}) from PB X Store? This action cannot be undone.`,
-        confirmLabel: 'Delete Permanently',
-        danger: true,
-        onConfirm: async () => {
-          try {
-            await remove(ref(db, `apps/${app.id}`));
-            showToast(`"${app.name}" has been deleted.`, 'success');
-            if (selectedAppId === app.id) {
-              setSelectedAppId(null);
-              setActiveView('builds');
-            }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : 'Failed to delete build.';
-            showToast(msg, 'error');
-          }
-        },
-      });
-    },
-    [selectedAppId, showToast]
-  );
-
-  const handleDeleteReview = useCallback(
-    (review: AppReview) => {
-      setConfirmDialog({
-        open: true,
-        title: 'Delete Review',
-        message: `Remove this ${review.rating}-star review by "${review.author}" on "${review.appName}"?`,
-        confirmLabel: 'Delete Review',
-        danger: true,
-        onConfirm: async () => {
-          try {
-            if (review.sourcePath === 'nested') {
-              await remove(ref(db, `apps/${review.appId}/reviews/${review.id}`));
-            } else {
-              await remove(ref(db, `reviews/${review.appId}/${review.id}`));
-            }
-            showToast('Review removed successfully.', 'success');
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : 'Unable to delete review.';
-            showToast(msg, 'error');
-          }
-        },
-      });
-    },
-    [showToast]
-  );
-
-  // Exactly 3 main sections: Dashboard, Builds, Upload
-  const navItems: { id: ActiveView; label: string; icon: typeof LayoutGrid; badge?: number }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
-    { id: 'builds', label: 'Builds', icon: Box, badge: apps.length },
-    { id: 'add', label: 'Upload', icon: PlusCircle },
-  ];
-
-  const activeNavId: ActiveView = activeView === 'manage' ? 'builds' : activeView;
-
-  const mobilePageTitle =
-    activeView === 'dashboard'
-      ? 'Dashboard'
-      : activeView === 'builds'
-        ? 'All Builds'
-        : activeView === 'add'
-          ? editingApp
-            ? 'Edit Build'
-            : 'Upload Build'
-          : selectedApp?.name || 'Manage Build';
-
-  if (!authReady) {
-    return (
-      <SplashScreen
-        message="Initializing Control Center"
-        subMessage="Checking administrator session..."
-      />
-    );
-  }
-
-  if (!user) {
-    return (
-      <>
-        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-        <LoginView onLogin={handleLogin} />
-      </>
-    );
-  }
-
   return (
     <>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-      <QRModal
-        app={qrApp}
-        onClose={() => setQrApp(null)}
-        onCopyLink={handleCopyLink}
-      />
-      <ConfirmModal
-        dialog={confirmDialog}
-        onClose={() => setConfirmDialog(null)}
-      />
+      <StoreLegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
 
       <AnimatePresence>
-        {!dataReady && (
+        {loading && (
           <SplashScreen
-            message="Syncing PB X Store"
-            subMessage="Loading live builds and user reviews..."
+            message="Loading PB X Store"
+            subMessage="Syncing verified app releases..."
           />
         )}
       </AnimatePresence>
 
-      <div className="min-h-[100dvh] w-full canvas-bg flex flex-col lg:flex-row">
-        {/* Desktop Persistent Left Sidebar */}
-        <aside
-          className="hidden lg:flex lg:flex-col lg:w-72 lg:fixed lg:inset-y-0 lg:left-0 z-30 border-r border-[var(--border-subtle)] p-5 justify-between transition-colors duration-200"
-          style={{ backgroundColor: 'var(--canvas)' }}
-        >
-          <div className="space-y-6">
-            {/* Brand Lockup */}
-            <button
-              type="button"
-              onClick={() => navigateTo('dashboard')}
-              className="flex items-center gap-3 text-left w-full px-1 cursor-pointer"
-            >
-              <BrandEmblem3D size="sm" />
-              <div className="min-w-0">
-                <p className="font-extrabold text-base tracking-tight text-[var(--text-primary)] leading-tight truncate">
-                  PB X Store
-                </p>
-                <p className="text-xs text-[var(--text-muted)] truncate">
-                  Admin Control Center
-                </p>
-              </div>
-            </button>
-
-            {/* Primary Navigation */}
-            <nav aria-label="Primary navigation" className="space-y-1.5">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const active = activeNavId === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() =>
-                      item.id === 'add' ? handleOpenAdd() : navigateTo(item.id)
-                    }
-                    className={`w-full min-h-[44px] px-3.5 rounded-xl text-sm font-semibold flex items-center justify-between gap-3 transition-all cursor-pointer ${
-                      active
-                        ? 'btn-3d-primary'
-                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-inset)]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-3 min-w-0">
-                      <Icon className="w-4 h-4 shrink-0" />
-                      <span className="truncate">{item.label}</span>
-                    </span>
-                    {typeof item.badge === 'number' && item.badge > 0 && (
-                      <span
-                        className={`font-mono text-xs tabular-nums ${
-                          active ? 'opacity-90' : 'text-[var(--text-muted)]'
-                        }`}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-
-          {/* Bottom Controls: Theme, Sound & Sign Out */}
-          <div className="space-y-4 pt-4 border-t border-[var(--border-subtle)]">
-            <ThemeSwitcher />
-
-            <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)]">
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-[var(--text-primary)] truncate">
-                  Administrator
-                </p>
-                <p className="text-[11px] text-[var(--text-muted)] truncate">
-                  {user.email || 'Authenticated'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                aria-label="Sign out"
-                title="Sign Out"
-                className="btn-3d-secondary w-9 h-9 rounded-xl flex items-center justify-center text-red-600 dark:text-red-400 shrink-0 cursor-pointer"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </aside>
-
-        {/* Mobile Sticky Top Header */}
+      <div className="min-h-[100dvh] w-full canvas-bg flex flex-col">
+        {/* Seamless Sticky Header — unified with status bar & active theme */}
         <header
-          className="lg:hidden sticky top-0 z-40 border-b border-[var(--border-subtle)] transition-colors duration-200"
+          className="sticky top-0 z-40 border-b border-[var(--border-subtle)] transition-colors duration-200"
           style={{
             backgroundColor: 'var(--canvas)',
             paddingTop: 'env(safe-area-inset-top, 0px)',
           }}
         >
-          <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+          <div className="max-w-5xl mx-auto px-3.5 sm:px-6 py-2.5 flex items-center justify-between gap-3">
             <button
               type="button"
-              onClick={() => navigateTo('dashboard')}
-              className="flex items-center gap-2.5 min-w-0 cursor-pointer"
+              onClick={goHome}
+              className="flex items-center gap-2.5 min-w-0 cursor-pointer text-left"
             >
               <BrandEmblem3D size="sm" />
-              <span className="font-extrabold text-sm tracking-tight text-[var(--text-primary)] truncate">
-                {mobilePageTitle}
+              <span className="font-extrabold text-sm sm:text-base tracking-tight text-[var(--text-primary)] leading-none whitespace-nowrap">
+                PB X Store
               </span>
             </button>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <ThemeSwitcher compact align="right" />
-              <button
-                type="button"
-                onClick={handleSignOut}
-                aria-label="Sign out"
-                title="Sign Out"
-                className="btn-3d-secondary min-h-[34px] min-w-[34px] px-2 rounded-xl flex items-center justify-center text-red-600 dark:text-red-400 cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            <ThemeSwitcher compact align="right" />
           </div>
         </header>
 
-        {/* Main Scrollable Content Viewport */}
-        <main className="flex-1 w-full lg:pl-72">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-44 sm:pb-40 lg:pb-12">
-            {activeView === 'dashboard' && (
-              <DashboardOverview
-                apps={apps}
-                ratingsByAppId={ratingsAggregate.byAppId}
-                overallAverage={ratingsAggregate.overallAverage}
-                totalReviews={ratingsAggregate.totalReviews}
-                totalComments={ratingsAggregate.totalComments}
-                onOpenAdd={handleOpenAdd}
-                onViewBuilds={() => navigateTo('builds')}
-                onManageApp={handleManageApp}
-              />
-            )}
+        {/* Main Storefront Content */}
+        <main className="flex-1 w-full max-w-5xl mx-auto px-3.5 sm:px-6 pt-5 sm:pt-8 pb-12">
+          {syncError && (
+            <div className="surface-3d rounded-2xl p-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-red-500/30">
+              <p className="text-xs sm:text-sm font-medium text-red-600 dark:text-red-400">
+                Store sync error: {syncError}
+              </p>
+              <button
+                type="button"
+                onClick={() => setSyncKey((k) => k + 1)}
+                className="btn-3d-secondary min-h-[36px] px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry</span>
+              </button>
+            </div>
+          )}
 
-            {activeView === 'builds' && (
-              <BuildsListView
-                apps={apps}
-                ratingsByAppId={ratingsAggregate.byAppId}
-                serverNow={serverNow}
-                onOpenAdd={handleOpenAdd}
-                onManageApp={handleManageApp}
-                onCopyLink={handleCopyLink}
-                onShowQR={(item) => setQrApp(item)}
-              />
-            )}
+          {!loading && !activeSlug && (
+            <StoreHomeView
+              apps={activeApps}
+              serverNow={serverNow}
+              searchQuery={searchQuery}
+              selectedCategory={selectedCategory}
+              selectedPlatform={selectedPlatform}
+              onSearchChange={setSearchQuery}
+              onCategoryChange={setSelectedCategory}
+              onPlatformChange={setSelectedPlatform}
+              onOpenApp={openAppBySlug}
+            />
+          )}
 
-            {activeView === 'add' && (
-              <BuildFormView
-                editingApp={editingApp}
-                saving={savingBuild}
-                serverNow={serverNow}
-                onSubmit={handleSubmitBuild}
-                onCancel={() => {
-                  if (editingApp) {
-                    setSelectedAppId(editingApp.id);
-                    setEditingApp(null);
-                    setActiveView('manage');
-                  } else {
-                    navigateTo('dashboard');
-                  }
-                }}
-              />
-            )}
+          {!loading && activeSlug && activeApp && !isAppUnlocked(activeApp) && (
+            <StorePasswordGate
+              app={activeApp}
+              onUnlock={() => handleUnlockApp(activeApp)}
+              onBack={goHome}
+            />
+          )}
 
-            {activeView === 'manage' && selectedApp && (
-              <ManageBuildView
-                app={selectedApp}
-                ratingSummary={
-                  ratingsAggregate.byAppId[selectedApp.id] || EMPTY_RATING_SUMMARY
-                }
-                serverNow={serverNow}
-                togglingPublish={togglingPublish}
-                updatingValidity={updatingValidity}
-                onBack={() => navigateTo('builds')}
-                onEdit={handleEditApp}
-                onShowQR={(item) => setQrApp(item)}
-                onCopyLink={handleCopyLink}
-                onTogglePublish={handleTogglePublish}
-                onMakeLifetime={handleMakeLifetime}
-                onDelete={handleDeleteApp}
-                onDeleteReview={handleDeleteReview}
-              />
-            )}
+          {!loading && activeSlug && activeApp && isAppUnlocked(activeApp) && (
+            <StoreAppDetailView
+              app={activeApp}
+              serverNow={serverNow}
+              onBack={goHome}
+              onCopyLink={handleCopyLink}
+              onDownload={handleDownloadApp}
+              onNotify={showToast}
+            />
+          )}
 
-            <div aria-hidden="true" className="h-10 lg:hidden" />
-          </div>
+          {!loading && activeSlug && !activeApp && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22 }}
+              className="py-12 sm:py-16 flex items-center justify-center"
+            >
+              <div className="surface-3d-lg rounded-3xl p-7 sm:p-9 max-w-sm w-full text-center space-y-4">
+                <div
+                  className="w-14 h-14 rounded-2xl mx-auto flex items-center justify-center border border-[var(--border-subtle)]"
+                  style={{
+                    background: 'var(--surface-inset)',
+                    boxShadow: 'var(--shadow-inset)',
+                  }}
+                >
+                  <PackageX className="w-6 h-6 text-[var(--text-muted)]" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-extrabold text-[var(--text-primary)]">
+                    App Not Available
+                  </h1>
+                  <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-1.5 leading-relaxed">
+                    This release does not exist, has expired, or has been unpublished by the publisher.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={goHome}
+                  className="btn-3d-primary min-h-[42px] px-5 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Return to Store</span>
+                </button>
+              </div>
+            </motion.div>
+          )}
         </main>
 
-        {/* Mobile Bottom Tab Bar — Exactly 3 tabs: Dashboard | Builds | Upload */}
-        <nav
-          aria-label="Mobile navigation"
-          className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[var(--border-subtle)] transition-colors duration-200"
+        {/* Clean Theme-Unified Footer with Working Legal & Support Modals */}
+        <footer
+          className="border-t border-[var(--border-subtle)] mt-auto transition-colors duration-200"
           style={{
             backgroundColor: 'var(--canvas)',
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            boxShadow: '0 -8px 24px -10px rgba(0, 0, 0, 0.14)',
+            paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
         >
-          <div className="grid grid-cols-3 items-center px-2 py-1.5">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = activeNavId === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() =>
-                    item.id === 'add' ? handleOpenAdd() : navigateTo(item.id)
-                  }
-                  className={`min-h-[48px] rounded-xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer ${
-                    active
-                      ? 'text-[var(--text-primary)] font-bold'
-                      : 'text-[var(--text-muted)] font-medium'
-                  }`}
-                >
-                  <Icon
-                    className={`w-5 h-5 ${
-                      active ? 'text-[var(--accent)] stroke-[2.4]' : ''
-                    }`}
-                  />
-                  <span className="text-[10.5px] leading-tight whitespace-nowrap">
-                    {item.label}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col items-center text-center space-y-3">
+            <button
+              type="button"
+              onClick={goHome}
+              className="flex items-center gap-2 cursor-pointer"
+            >
+              <BrandEmblem3D size="sm" />
+              <span className="font-extrabold text-sm text-[var(--text-primary)]">
+                PB X Store
+              </span>
+            </button>
+
+            <p className="text-xs text-[var(--text-muted)]">
+              Verified Android &amp; iOS App Distribution Platform
+            </p>
+
+            <div className="flex items-center justify-center flex-wrap gap-4 text-xs font-medium text-[var(--text-secondary)]">
+              <button
+                type="button"
+                onClick={() => setLegalDoc('privacy')}
+                className="hover:text-[var(--accent)] transition-colors cursor-pointer"
+              >
+                Privacy Policy
+              </button>
+              <button
+                type="button"
+                onClick={() => setLegalDoc('terms')}
+                className="hover:text-[var(--accent)] transition-colors cursor-pointer"
+              >
+                Terms of Use
+              </button>
+              <button
+                type="button"
+                onClick={() => setLegalDoc('support')}
+                className="hover:text-[var(--accent)] transition-colors cursor-pointer"
+              >
+                Support
+              </button>
+            </div>
+
+            <p className="text-[11px] text-[var(--text-muted)]">
+              &copy; {new Date().getFullYear()} PB X Store. All rights reserved.
+            </p>
           </div>
-        </nav>
+        </footer>
       </div>
     </>
   );

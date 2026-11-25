@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
-import { Clock, Lock, Search, Smartphone, Sparkles, X } from 'lucide-react';
+import { Clock, Lock, Search, Smartphone, Star, X } from 'lucide-react';
 import type { StoreApp } from '../../types';
 import { getExpiryStatus } from '../../lib/firebase';
+import { buildAppRatingSummary } from '../../lib/reviews';
 import { AppIcon } from '../AppIcon';
 
 export type StorePlatformFilter = 'All' | 'Android' | 'iOS';
@@ -48,7 +49,10 @@ export function StoreHomeView({
     const term = searchQuery.trim().toLowerCase();
     return apps.filter((app) => {
       const appPlatform = (app.platform || 'Android').trim();
-      if (selectedPlatform !== 'All' && appPlatform.toLowerCase() !== selectedPlatform.toLowerCase()) {
+      if (
+        selectedPlatform !== 'All' &&
+        appPlatform.toLowerCase() !== selectedPlatform.toLowerCase()
+      ) {
         return false;
       }
 
@@ -93,10 +97,9 @@ export function StoreHomeView({
       {/* Clean Hero + Search Stage */}
       <section className="space-y-4">
         <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[var(--accent)]">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Official App Distribution</span>
-          </div>
+          <p className="text-xs font-semibold text-[var(--accent)]">
+            Official App Distribution
+          </p>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] text-[var(--text-primary)] leading-tight [text-wrap:balance]">
             Discover &amp; Download{' '}
             <span
@@ -255,6 +258,7 @@ export function StoreHomeView({
                 app.expiryTimestamp,
                 app.expiryTime
               );
+              const ratingSummary = buildAppRatingSummary(app);
 
               return (
                 <div
@@ -308,10 +312,22 @@ export function StoreHomeView({
                       <span className="text-[var(--text-muted)] font-medium truncate">
                         {categoryLabel}
                       </span>
-                      <span className="font-mono text-[var(--text-primary)] font-semibold shrink-0">
+                      <span className="font-mono text-[var(--text-primary)] font-semibold shrink-0 tabular-nums">
                         v{app.version}
                       </span>
                     </div>
+
+                    {ratingSummary.totalReviews > 0 && (
+                      <div className="flex items-center gap-1 text-[11px] font-mono text-[var(--text-secondary)] tabular-nums">
+                        <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
+                        <span className="font-semibold text-[var(--text-primary)]">
+                          {ratingSummary.averageRating.toFixed(1)}
+                        </span>
+                        <span className="text-[var(--text-muted)]">
+                          ({ratingSummary.totalReviews})
+                        </span>
+                      </div>
+                    )}
 
                     {!expiry.isLifetime && (
                       <div

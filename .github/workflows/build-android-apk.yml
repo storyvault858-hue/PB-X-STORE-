@@ -1,4 +1,4 @@
-name: Build PB X Store Admin APK
+name: Build PB X Store APK
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build & Publish PB X Store Admin APK
+    name: Build & Publish PB X Store APK
     runs-on: ubuntu-latest
 
     steps:
@@ -74,27 +74,27 @@ jobs:
             echo "APK not found at $APK_SOURCE"
             exit 1
           fi
-          cp "$APK_SOURCE" "PB-X-Store-Admin.apk"
-          ls -lh PB-X-Store-Admin.apk
+          cp "$APK_SOURCE" "PB-X-Store.apk"
+          ls -lh PB-X-Store.apk
 
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: PB-X-Store-Admin-APK-build-${{ github.run_number }}
-          path: PB-X-Store-Admin.apk
+          name: PB-X-Store-APK-build-${{ github.run_number }}
+          path: PB-X-Store.apk
           retention-days: 90
 
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: PB X Store Admin v1.0.${{ github.run_number }}
+          tag_name: store-v1.0.${{ github.run_number }}
+          name: PB X Store v1.0.${{ github.run_number }}
           body: |
-            Automated Android APK build for **PB X Store Admin Control Center**.
+            Automated Android APK build for **PB X Store**.
 
             ### How to Install
-            1. Download **PB-X-Store-Admin.apk** below.
+            1. Download **PB-X-Store.apk** below.
             2. Open the downloaded file on your Android device and tap **Install**.
-          files: PB-X-Store-Admin.apk
+          files: PB-X-Store.apk
           draft: false
           prerelease: false
